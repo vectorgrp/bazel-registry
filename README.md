@@ -1,2 +1,2 @@
-# bazel-regristry
+# bazel-registry
 Public bazel registry 
