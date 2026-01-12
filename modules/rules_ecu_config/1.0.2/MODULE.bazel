@@ -1,0 +1,5 @@
+module(name = "rules_ecu_config", version = "1.0.2")
+
+bazel_dep(name = "rules_java", version = "9.3.0")
+bazel_dep(name = "rules_dvarjson", version = "1.0.0")
+bazel_dep(name = "rules_cfg6", version = "1.0.0")
