@@ -19,4 +19,4 @@ See [here](https://github.com/vectorgrp/davinci-samples) for ECU configuration e
 
 This repo follows the structure for Bazel index registries. I.e. modules are represented as sub-folders of the [modules](modules) folder with sub-folders for the individual module versions.
 
-E.g. version `1.0.2` of module `rules_ecu_config` is contained in [modules/rules_ecu_config/1.0.2](modules/rules_ecu_config/1.0.2).
+E.g. version `1.0.3` of module `rules_ecu_config` is contained in [modules/rules_ecu_config/1.0.3](modules/rules_ecu_config/1.0.3).
