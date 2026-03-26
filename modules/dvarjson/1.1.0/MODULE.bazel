@@ -1,0 +1,15 @@
+module(name = "dvarjson", version = "1.1.0")
+
+bazel_dep(name = "rules_dvarjson", version = "1.1.0")
+
+dvarjson_archive = use_repo_rule("@rules_dvarjson//:defs.bzl", "dvarjson_archive")
+
+dvarjson_archive(
+    name = "tool",
+    nupkg_sha256 = "E0F86CDA336BAF3C8BCBF39BD458E429153EFCD384D388915FCEE2A10605C076",
+    nupkg_url = "https://packages.vehub.vector.com/nuget/flatcontainer/vector-dvarjson/1.1.0/vector-dvarjson.1.1.0.nupkg",
+    sha256 = "38D3E30EF6092C31D2F0E37747130684DFC77C4E8E94850D0FEA326BF8B7706F",
+    url = "https://packages.vehub.vector.com/apt/pool/generic/vector-davinci-autosar-json/1.1.0/vector-dvarjson-1.1.0-amd64.deb"
+)
+
+register_toolchains("@tool//:toolchain")

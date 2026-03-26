@@ -1,0 +1,16 @@
+module(name = "dvcfg6", version = "6.2.5")
+
+bazel_dep(name = "rules_cfg6", version = "2.0.0")
+bazel_dep(name = "rules_java", version = "9.3.0")
+
+cfg6_archive = use_repo_rule("@rules_cfg6//:defs.bzl", "cfg6_archive")
+
+cfg6_archive(
+    name = "cfg6",
+    nupkg_sha256 = "AF2CBFD697E8C531562ECB92F1CA1FFF123D27253D3F146BEF6255B24B3B5A3B",
+    nupkg_url = "https://packages.vehub.vector.com/nuget/flatcontainer/vector-davinci-configurator-classic/6.2.5/vector-davinci-configurator-classic.6.2.5.nupkg",
+    sha256 = "A98AF5E484E93625A984237D96AC6783B42C97CEB36F4ACD4C32E80761FEDB99",
+    url = "https://packages.vehub.vector.com/apt/pool/generic/vector-davinci-configurator-classic/6.2.5/vector-davinci-configurator-classic-6.2.5.deb"
+)
+
+register_toolchains("@cfg6//:toolchain")
