@@ -1,7 +1,10 @@
 module(name = "dvcfg6", version = "6.2.5")
 
 bazel_dep(name = "rules_cfg6", version = "2.0.0")
+bazel_dep(name = "rules_dvarjson", version = "1.1.0")
+bazel_dep(name = "rules_ecu_config", version = "2.0.0")
 bazel_dep(name = "rules_java", version = "9.3.0")
+bazel_dep(name = "rules_shell", version = "0.6.1")
 
 cfg6_archive = use_repo_rule("@rules_cfg6//:defs.bzl", "cfg6_archive")
 
