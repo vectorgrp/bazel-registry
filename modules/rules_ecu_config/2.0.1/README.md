@@ -1,9 +1,9 @@
 ﻿<!-- Generated with Stardoc: http://skydoc.bazel.build -->
 
-# rules_ecu_config v2.0.0
+# rules_ecu_config v2.0.1
 
 ```starlark
-bazep_dep(name = "rules_ecu_config", version = "2.0.0")
+bazep_dep(name = "rules_ecu_config", version = "2.0.1")
 ```
 Bazel ruleset for configuring ECU projects.
 

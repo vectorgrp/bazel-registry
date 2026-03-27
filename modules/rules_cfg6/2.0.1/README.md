@@ -1,9 +1,9 @@
 ﻿<!-- Generated with Stardoc: http://skydoc.bazel.build -->
 
-# rules_cfg6 v2.0.0
+# rules_cfg6 v2.0.1
 
 ```starlark
-bazep_dep(name = "rules_cfg6", version = "2.0.0")
+bazep_dep(name = "rules_cfg6", version = "2.0.1")
 ```
 Bazel ruleset for working with [DaVinci Configurator Classic Version 6](https://help.vector.com/davinci-configurator-classic/en/latest/user-manual/index.html).
 
