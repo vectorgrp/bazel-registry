@@ -19,7 +19,7 @@ See [here](https://github.com/vectorgrp/davinci-samples) for ECU configuration e
 
 This repo follows the structure for Bazel index registries. I.e. modules are represented as sub-folders of the [modules](modules) folder with sub-folders for the individual module versions.
 
-E.g. version `2.0.1` of module `rules_ecu_config` is contained in [modules/rules_ecu_config/2.0.1](modules/rules_ecu_config/2.0.1).
+E.g. version `2.1.1` of module `rules_ecu_config` is contained in [modules/rules_ecu_config/2.1.1](modules/rules_ecu_config/2.1.1).
 
 ## Bazel Compatibility
 
@@ -30,6 +30,6 @@ The following rule versions can be used depending on the used version of Bazel:
 - Bazel **8.5.1**
   - **dvarjson** 1.1.0
   - **dvcfg6** 6.2.5
-  - **rules_cfg6** [1.0.0, 2.0.2]
+  - **rules_cfg6** [1.0.0, 2.1.0]
   - **rules_dvarjson** [1.0.0, 1.1.0]
-  - **rules_ecu_config** [1.0.0, 2.0.1]
+  - **rules_ecu_config** [1.0.0, 2.1.1]
