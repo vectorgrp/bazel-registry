@@ -1,0 +1,5 @@
+--- a/shell/private/BUILD
++++ b/shell/private/BUILD
+@@ -2,0 +2,2 @@
++
++exports_files(["providers.bzl"], visibility = ["//visibility:public"])

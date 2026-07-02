@@ -1,0 +1,3 @@
+targets:
+    //:build_all_modules
+    //build/...

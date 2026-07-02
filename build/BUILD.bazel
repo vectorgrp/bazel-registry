@@ -1,0 +1,14 @@
+load("//build:rules.bzl", "build_all_modules_script")
+
+package(default_visibility = ["//visibility:public"])
+
+package_group(
+    name = "package_group",
+    packages = ["//build/..."]
+)
+
+build_all_modules_script(
+    name = "build_all_modules_script",
+    modules = [ "//build/{module}:{module}_build".format(module = m) for m in subpackages(include = ["**"]) ],
+    tags = ["no-ide"]
+)

@@ -1,0 +1,66 @@
+load("@stardoc//stardoc:stardoc.bzl", "stardoc")
+load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
+load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
+load("//build:rules.bzl", "module_build_props", "build_module", "append_files")
+
+name, version, readme_title_substitutions = module_build_props("3.0.0")
+
+bzl_library(
+    name = "lib",
+    srcs = [
+        "@rules_ecu_config//:defs.bzl",
+        "@rules_ecu_config//:rules.bzl",
+        "@rules_ecu_config//:ecu_config.bzl",
+        "//src/rules_ecu_config:defs.bzl",
+        "//src/rules_ecu_config:rules.bzl",
+        "//src/rules_ecu_config:ecu_config.bzl"
+    ],
+    deps = ["//build/rules_cfg6:lib", "//build/rules_dvarjson:lib"],
+    visibility = ["//visibility:public"]
+)
+
+stardoc(
+    name = "readme_1_stardoc",
+    input = "doc.bzl",
+    out = "readme_1_stardoc.md",
+    deps = ["lib"]
+)
+
+expand_template(
+    name = "readme_1",
+    template = "readme_1_stardoc",
+    out = "readme_1.md",
+    substitutions = readme_title_substitutions | { "@//build/rules_ecu_config:doc.bzl": "@rules_ecu_config//:ecu_config.bzl" }
+)
+
+stardoc(
+    name = "readme_2_stardoc",
+    input = "MyProject_doc.bzl",
+    out = "readme_2_stardoc.md",
+    deps = [
+        "@MyProject//:defs.bzl",
+        "@MyProject//:rules.bzl",
+        "@cfg6//:defs.bzl",
+        "@cfg6//:rules.bzl",
+        "lib"
+    ]
+)
+
+expand_template(
+    name = "readme_2",
+    template = "readme_2_stardoc",
+    out = "readme_2.md",
+    substitutions = { "@//build/rules_ecu_config:MyProject_doc.bzl": "@MyProject//:defs.bzl" }
+)
+
+append_files(
+    name = "readme",
+    srcs = ["readme_1", "readme_2"],
+    out = "README.md"
+)
+
+build_module(
+    name = name,
+    version = version,
+    readme = "readme"
+)

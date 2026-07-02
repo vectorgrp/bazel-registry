@@ -1,0 +1,24 @@
+load("@stardoc//stardoc:stardoc.bzl", "stardoc")
+load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
+load("//build:rules.bzl", "module_build_props", "build_module")
+
+name, version, readme_title_substitutions = module_build_props("1.1.0")
+
+stardoc(
+    name = "stardoc",
+    input = "doc.bzl",
+    out = "stardoc.md"
+)
+
+expand_template(
+    name = "readme",
+    template = "stardoc",
+    out = "README.md",
+    substitutions = readme_title_substitutions
+)
+
+build_module(
+    name = name,
+    version = version,
+    readme = "readme"
+)

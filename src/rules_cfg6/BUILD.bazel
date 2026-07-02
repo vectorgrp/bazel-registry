@@ -1,0 +1,12 @@
+load("defs.bzl", "as_code_arg")
+package(default_visibility = ["//visibility:public"])
+filegroup(name = "srcs", srcs = glob(["**"]), visibility = ["//build:package_group"])
+toolchain_type(name = "toolchain_type")
+as_code_arg(
+    name = "false",
+    value = 'false'
+)
+as_code_arg(
+    name = "true",
+    value = 'true'
+)

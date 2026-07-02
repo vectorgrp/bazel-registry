@@ -1,0 +1,50 @@
+# https://registry.bazel.build/modules/stardoc
+bazel_dep(name = "stardoc", version = "0.8.1", dev_dependency = True)
+# https://registry.bazel.build/modules/rules_java
+bazel_dep(name = "rules_java", version = "9.6.1", dev_dependency = True)
+# https://registry.bazel.build/modules/bazel_skylib
+bazel_dep(name = "bazel_skylib", version = "1.9.0", dev_dependency = True)
+# https://registry.bazel.build/modules/rules_shell
+bazel_dep(name = "rules_shell", version = "0.7.1", dev_dependency = True)
+# https://registry.bazel.build/modules/rules_pkg
+bazel_dep(name = "rules_pkg", version = "1.2.0", dev_dependency = True)
+
+# patching rules shell for stardoc
+single_version_override(
+    module_name = "rules_shell",
+    patches = ["//build:rules_shell.patch"],
+    patch_strip = 1,
+)
+
+local_repository = use_repo_rule("@bazel_tools//tools/build_defs/repo:local.bzl", "local_repository")
+
+local_repository(
+    name = "rules_cfg6",
+    path = "src/rules_cfg6"
+)
+
+local_repository(
+    name = "rules_dvarjson",
+    path = "src/rules_dvarjson"
+)
+
+local_repository(
+    name = "rules_ecu_config",
+    path = "src/rules_ecu_config"
+)
+
+cfg6_archive = use_repo_rule("//src/rules_cfg6:defs.bzl", "cfg6_archive")
+cfg6_archive(
+    name = "cfg6",
+    nupkg_sha256 = "AF2CBFD697E8C531562ECB92F1CA1FFF123D27253D3F146BEF6255B24B3B5A3B",
+    nupkg_url = "https://packages.vehub.vector.com/nuget/flatcontainer/vector-davinci-configurator-classic/6.2.5/vector-davinci-configurator-classic.6.2.5.nupkg",
+)
+
+ecu_config = use_extension("//src/rules_ecu_config:ecu_config.bzl", "ecu_config")
+ecu_config.project(
+    name = "MyProject",
+    bsw_pkg = "build/davinci/bsw",
+    cfg6_defs = "@cfg6//:defs.bzl",
+    creation_file = "build/davinci/project-creation.json"
+)
+use_repo(ecu_config, "MyProject")

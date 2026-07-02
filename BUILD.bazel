@@ -1,0 +1,7 @@
+load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+
+sh_binary(
+    name = "build_all_modules",
+    srcs = ["//build:build_all_modules_script"],
+    use_bash_launcher = True
+)

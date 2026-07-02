@@ -1,0 +1,3 @@
+package(default_visibility = ["//visibility:public"])
+filegroup(name = "srcs", srcs = glob(["**"]), visibility = ["//build:package_group"])
+toolchain_type(name = "toolchain_type")
