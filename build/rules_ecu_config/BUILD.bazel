@@ -3,7 +3,7 @@ load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
 load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
 load("//build:rules.bzl", "module_build_props", "build_module", "append_files")
 
-name, version, readme_title_substitutions = module_build_props("3.0.0")
+name, version, readme_title_substitutions = module_build_props("3.0.1")
 
 bzl_library(
     name = "lib",

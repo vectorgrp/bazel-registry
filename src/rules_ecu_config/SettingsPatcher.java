@@ -1,7 +1,9 @@
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.util.Map;
+import java.util.function.Consumer;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -53,7 +55,7 @@ import com.google.gson.JsonPrimitive;
  * </ul>
  *
  * <p>
- * Usage: {@code java -cp <gson.jar> SettingsPatch.java -d <dvjson> -p <patch>}
+ * Usage: {@code java -cp <gson.jar> SettingsPatch.java <dvjson> <patch>}
  */
 public final class SettingsPatcher {
 
@@ -84,74 +86,29 @@ public final class SettingsPatcher {
      * @param args {@code -d <dvjson_path> -p <patch_file_path>}
      */
     public static void main(String[] args) throws IOException {
-        String dvjsonPath = null;
-        String patchPath = null;
-        var i = 0;
-        while (i < args.length) {
-            switch (args[i]) {
-                case "-d" -> {
-                    if (i + 1 >= args.length) {
-                        System.err.println("Missing value for -d");
-                        System.exit(1);
-                    }
-                    dvjsonPath = args[++i];
-                }
-                case "-p" -> {
-                    if (i + 1 >= args.length) {
-                        System.err.println("Missing value for -p");
-                        System.exit(1);
-                    }
-                    patchPath = args[++i];
-                }
-                default -> {
-                    System.err.printf("Unknown option: %s%n", args[i]);
-                    System.exit(1);
-                }
-            }
-            i++;
-        }
-        if (dvjsonPath == null || patchPath == null) {
-            System.err.println("Usage: java SettingsPatch.java -d <dvjson> -p <patch>");
+        if (args.length != 2 || !args[0].endsWith(".dvjson") || !args[1].endsWith(".json")) {
+            System.err.println("Usage: java SettingsPatch.java <dvjson> <patch>");
             System.exit(1);
         }
 
-        final var dvjson = Path.of(dvjsonPath);
+        final var dvjson = Path.of(args[0]);
         final var dvjsonDir = dvjson.toAbsolutePath().getParent();
-        final var dvjsonContent = readJson(dvjson).getAsJsonObject();
-        final var patch = readJson(Path.of(patchPath)).getAsJsonObject();
+        final var dvjsonContent = readJson(dvjson);
+        var saveDvjson = false;
 
-        for (var key : patch.keySet()) {
-            ensureRegistered(dvjson, dvjsonContent, key);
-            final var pathEntry = dvjsonContent.get(key);
+        for (var entry : readJson(Path.of(args[1])).entrySet()) {
+            var pathEntry = dvjsonContent.get(entry.getKey());
             if (pathEntry == null || pathEntry.isJsonNull()) {
-                System.err.printf("No path registered for key: '%s' — skipping%n", key);
-                continue;
+                saveDvjson = true;
+                pathEntry = new JsonPrimitive("Settings/" + capitalize(entry.getKey()) + ".json");
+                dvjsonContent.add(entry.getKey(), pathEntry);
             }
-            // Normalize backslashes from Windows-style dvjson entries to forward slashes for Path.resolve
-            final var settingsFile = dvjsonDir.resolve(pathEntry.getAsString().replace("\\", "/"));
-            patchSettingsFile(settingsFile, patch.get(key).getAsJsonObject());
+            patchSettingsFile(dvjsonDir.resolve(pathEntry.getAsString().replace("\\", "/")), entry.getValue().getAsJsonObject());
         }
-    }
 
-    /**
-     * Ensures that the given key is registered in the dvjson. If the key is missing, a default settings path ({@code Settings/<Key>.json}) is added and the dvjson is updated on
-     * disk.
-     *
-     * @param dvjson        path to the dvjson file
-     * @param dvjsonContent parsed dvjson object (modified in-place if key is missing)
-     * @param key           the settings key to check
-     */
-    private static void ensureRegistered(Path dvjson, JsonObject dvjsonContent, String key) throws IOException {
-        if (dvjsonContent.has(key)) {
-            return;
+        if (saveDvjson) {
+            writeJson(dvjson, dvjsonContent);
         }
-        if (key.isEmpty()) {
-            throw new IllegalArgumentException("Patch key must not be empty");
-        }
-        final var rel = "Settings/" + capitalize(key) + ".json";
-        dvjsonContent.addProperty(key, rel);
-        writeJson(dvjson, dvjsonContent);
-        System.out.printf("Registered: '%s' -> '%s'%n", key, rel);
     }
 
     /**
@@ -161,15 +118,14 @@ public final class SettingsPatcher {
      * @param patchValue   the JSON object to merge into the settings
      */
     private static void patchSettingsFile(Path settingsFile, JsonObject patchValue) throws IOException {
-        if (Files.isRegularFile(settingsFile)) {
-            final var merged = deepMerge(readJson(settingsFile).getAsJsonObject(), patchValue);
-            writeJson(settingsFile, relativizePaths(merged, settingsFile));
-            System.out.printf("Patched: %s%n", settingsFile);
-        } else {
-            Files.createDirectories(settingsFile.getParent());
-            writeJson(settingsFile, relativizePaths(patchValue.deepCopy(), settingsFile));
-            System.out.printf("Created: %s%n", settingsFile);
+        JsonObject merged;
+        try {
+            merged = readJson(settingsFile);
+            deepMerge(merged, patchValue);
+        } catch (NoSuchFileException ignored) {
+            merged = patchValue;
         }
+        writeJson(settingsFile, merged);
     }
 
     /**
@@ -184,28 +140,27 @@ public final class SettingsPatcher {
      *
      * @param base     the base JSON object
      * @param override the override JSON object
-     * @return a new merged JSON object
      */
-    private static JsonObject deepMerge(JsonObject base, JsonObject override) {
-        final var result = base.deepCopy();
-        for (var key : override.keySet()) {
-            final var overrideVal = override.get(key);
+    private static void deepMerge(JsonObject base, JsonObject override) {
+        for (var entry : override.entrySet()) {
             // Explicit JSON null in the patch means "delete this key".
-            if (overrideVal.isJsonNull()) {
-                result.remove(key);
-                continue;
-            }
-            final var baseVal = result.get(key);
-            switch (overrideVal) {
-                case JsonObject o when baseVal instanceof JsonObject b -> result.add(key, deepMerge(b, o));
-                case JsonArray o when baseVal instanceof JsonArray b -> {
-                    final var identityKey = ARRAY_IDENTITY_KEYS.get(key);
-                    result.add(key, identityKey != null ? mergeArraysByKey(b, o, identityKey) : mergeArrays(b, o));
+            if (entry.getValue().isJsonNull()) {
+                base.remove(entry.getKey());
+            } else {
+                switch (entry.getValue()) {
+                    case JsonObject o when base.get(entry.getKey()) instanceof JsonObject b -> deepMerge(b, o);
+                    case JsonArray o when base.get(entry.getKey()) instanceof JsonArray b -> {
+                        final var identityKey = ARRAY_IDENTITY_KEYS.get(entry.getKey());
+                        if (identityKey != null) {
+                            mergeArraysByKey(b, o, identityKey);
+                        } else {
+                            mergeArrays(b, o);
+                        }
+                    }
+                    default -> base.add(entry.getKey(), entry.getValue());
                 }
-                default -> result.add(key, overrideVal.deepCopy());
             }
         }
-        return result;
     }
 
     /**
@@ -215,18 +170,16 @@ public final class SettingsPatcher {
      * @param base        the base array
      * @param override    the override array
      * @param identityKey the JSON field name used to match elements
-     * @return a new merged array
      */
-    private static JsonArray mergeArraysByKey(JsonArray base, JsonArray override, String identityKey) {
-        final var result = base.deepCopy();
+    private static void mergeArraysByKey(JsonArray base, JsonArray override, String identityKey) {
         for (var overrideItem : override) {
             if (!(overrideItem instanceof JsonObject overrideObj) || !overrideObj.has(identityKey)) {
-                result.add(overrideItem.deepCopy());
+                base.add(overrideItem);
                 continue;
             }
             final var overrideId = overrideObj.get(identityKey);
             if (overrideId == null || overrideId.isJsonNull()) {
-                result.add(overrideItem.deepCopy());
+                base.add(overrideItem);
                 continue;
             }
 
@@ -235,10 +188,8 @@ public final class SettingsPatcher {
                     && overrideObj.get(DELETE_MARKER).getAsBoolean();
 
             int matchIndex = -1;
-            for (int i = 0; i < result.size(); i++) {
-                if (result.get(i) instanceof JsonObject obj
-                        && obj.has(identityKey)
-                        && obj.get(identityKey).equals(overrideId)) {
+            for (int i = 0; i < base.size(); i++) {
+                if (base.get(i) instanceof JsonObject b && overrideId.equals(b.get(identityKey))) {
                     matchIndex = i;
                     break;
                 }
@@ -246,15 +197,14 @@ public final class SettingsPatcher {
 
             if (matchIndex >= 0) {
                 if (isDelete) {
-                    result.remove(matchIndex);
+                    base.remove(matchIndex);
                 } else {
-                    result.set(matchIndex, overrideItem.deepCopy());
+                    base.set(matchIndex, overrideItem);
                 }
             } else if (!isDelete) {
-                result.add(overrideItem.deepCopy());
+                base.add(overrideItem);
             }
         }
-        return result;
     }
 
     /**
@@ -262,26 +212,31 @@ public final class SettingsPatcher {
      *
      * @param base     the base array
      * @param override the override array
-     * @return a new merged array containing all unique elements (deep-copied)
      */
-    private static JsonArray mergeArrays(JsonArray base, JsonArray override) {
-        final var result = base.deepCopy();
+    private static void mergeArrays(JsonArray base, JsonArray override) {
         for (var item : override) {
-            if (!result.contains(item)) {
-                result.add(item.deepCopy());
+            if (!base.contains(item)) {
+                base.add(item);
             }
         }
-        return result;
     }
 
     /** Reads and parses a JSON file. */
-    private static JsonElement readJson(Path path) throws IOException {
-        return JsonParser.parseString(Files.readString(path));
+    private static JsonObject readJson(Path path) throws IOException {
+        try (var reader = Files.newBufferedReader(path)) {
+            return JsonParser.parseReader(reader).getAsJsonObject();
+        }
     }
 
     /** Writes a JSON element to a file with pretty-printing. */
     private static void writeJson(Path path, JsonElement content) throws IOException {
-        Files.writeString(path, GSON.toJson(content));
+        final var folder = path.getParent();
+        relativizeElement(content, folder, null);
+        Files.createDirectories(folder);
+        try (var writer = Files.newBufferedWriter(path)) {
+            GSON.toJson(content, writer);
+        }
+        System.err.printf("Patched: %s%n", path);
     }
 
     /** Returns the string with its first character uppercased. */
@@ -289,42 +244,26 @@ public final class SettingsPatcher {
         return Character.toUpperCase(s.charAt(0)) + s.substring(1);
     }
 
-    /**
-     * Recursively traverses a JSON element and converts all absolute path strings to paths relative to the directory of the given target file.
-     *
-     * @param element    the JSON element to process
-     * @param targetFile the file the JSON will be written to (used as relativization base)
-     * @return a new JSON element with absolute paths replaced by relative ones
-     */
-    private static JsonElement relativizePaths(JsonElement element, Path targetFile) {
-        final var baseDir = targetFile.toAbsolutePath().getParent();
-        return relativizeElement(element, baseDir);
-    }
-
-    private static JsonElement relativizeElement(JsonElement element, Path baseDir) {
+    private static void relativizeElement(JsonElement element, Path baseDir, Consumer<JsonElement> apply) {
         if (element.isJsonObject()) {
-            final var result = new JsonObject();
             for (var entry : element.getAsJsonObject().entrySet()) {
-                result.add(entry.getKey(), relativizeElement(entry.getValue(), baseDir));
+                relativizeElement(entry.getValue(), baseDir, entry::setValue);
             }
-            return result;
         } else if (element.isJsonArray()) {
-            final var result = new JsonArray();
-            for (var item : element.getAsJsonArray()) {
-                result.add(relativizeElement(item, baseDir));
+            final var it = element.getAsJsonArray().asList().listIterator();
+            while (it.hasNext()) {
+                relativizeElement(it.next(), baseDir, it::set);
             }
-            return result;
         } else if (element.isJsonPrimitive() && element.getAsJsonPrimitive().isString()) {
             try {
                 final var value = Path.of(element.getAsString());
-                if (Files.isRegularFile(value) && value.isAbsolute()) {
+                if (value.isAbsolute() && Files.exists(value)) {
                     final var relativePath = baseDir.relativize(value.normalize());
-                    return new JsonPrimitive(relativePath.toString().replace("\\", "/"));
+                    apply.accept(new JsonPrimitive(relativePath.toString().replace("\\", "/")));
                 }
             } catch (Exception ignore) {
                 // Path parsing or relativization failed — keep original value
             }
         }
-        return element;
     }
 }

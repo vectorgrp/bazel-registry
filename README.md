@@ -35,4 +35,4 @@ The following rule versions can be used depending on the used version of Bazel:
   - **dvcfg6** 6.2.5
   - **rules_cfg6** [1.0.0, 3.0.0]
   - **rules_dvarjson** [1.0.0, 1.1.0]
-  - **rules_ecu_config** [1.0.0, 3.0.0]
+  - **rules_ecu_config** [1.0.0, 3.0.1]

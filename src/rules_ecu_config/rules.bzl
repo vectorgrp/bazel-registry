@@ -22,17 +22,18 @@ def _ext(repository_ctx):
     return ".exe" if _is_windows(repository_ctx) else ""
 
 def _cli(repository_ctx):
-    cfg6_defs = repository_ctx.attr.cfg6_defs
-    p = repository_ctx.path(cfg6_defs.same_package_label("_/dvcfg" + _ext(repository_ctx)))
-    return p if p.exists else repository_ctx.path(cfg6_defs.same_package_label("_/dvcfg-b" + _ext(repository_ctx)))
+    folder = repository_ctx.path(repository_ctx.attr.cfg6_defs).dirname.get_child("_")
+    ext = _ext(repository_ctx)
+    result = folder.get_child("dvcfg" + ext)
+    return result if result.exists else folder.get_child("dvcfg-b" + ext)
 
 def _java(repository_ctx):
-    java_dir = "java-win" if _is_windows(repository_ctx) else "java-linux"
-    return str(repository_ctx.path(repository_ctx.attr.cfg6_defs.same_package_label("_/{}/bin/java{}".format(java_dir, _ext(repository_ctx)))))
+    ext = _ext(repository_ctx)
+    return repository_ctx.path(repository_ctx.attr.cfg6_defs).dirname.get_child("_", "java-win" if ext else "java-linux", "bin", "java" + ext)
 
 def _gson_jar(repository_ctx):
-    plugins_dir = repository_ctx.path(repository_ctx.attr.cfg6_defs).dirname.get_child("_").get_child("dvcfgcore").get_child("plugins")
-    return [str(f) for f in plugins_dir.readdir() if "com.google.gson" in str(f)][0]
+    plugins_dir = repository_ctx.path(repository_ctx.attr.cfg6_defs).dirname.get_child("_", "dvcfgcore", "plugins")
+    return [f for f in plugins_dir.readdir(watch = "no") if "com.google.gson" in f.basename][0]
 
 def _execute(repository_ctx, *cmd_and_args):
     ret = repository_ctx.execute(
@@ -52,43 +53,41 @@ def _dvjson_substitution(repository_ctx):
         lock_file_name = dvjson_path.basename[:-6] + "~lock"
         for entry in dvjson_path.dirname.readdir(watch = "no"):
             if entry.is_dir:
-                if entry.basename.lower() == "output":
+                folder_name = entry.basename.lower()
+                if folder_name == "output":
                     repository_ctx.watch_tree(entry.get_child("Config"))
-                else:
+                elif folder_name != "config":
                     repository_ctx.watch_tree(entry)
             elif entry.basename != lock_file_name:
                 repository_ctx.watch(entry)
         return (bsw_pkg, str(dvjson_path), upstream_label)
-    if repository_ctx.attr.creation_file:
-        cli = _cli(repository_ctx)
-        repository_ctx.watch(cli)
-        _execute(repository_ctx, cli, "project", "create", "-b", bsw_pkg, "-f", repository_ctx.attr.creation_file, "--project-name", repository_ctx.original_name, "-o", "_")
-        dvjson = "_/{}.dvjson".format(repository_ctx.original_name)
-        repository_ctx.watch(repository_ctx.attr.creation_file)
-    else:
-        repository_ctx.extract(repository_ctx.attr.project_archive, "_")#, type = repository_ctx.attr.project_archive_type)
-        dvjson = "_/{}".format(repository_ctx.attr.project_archive_dvjson)
+    cli = _cli(repository_ctx)
+    repository_ctx.watch(cli)
+    _execute(repository_ctx, cli, "project", "create", "-b", bsw_pkg, "-f", repository_ctx.attr.creation_file, "--project-name", repository_ctx.original_name, "-o", "_")
+    dvjson = "_/{}.dvjson".format(repository_ctx.original_name)
+    repository_ctx.watch(repository_ctx.attr.creation_file)
     return (bsw_pkg, str(repository_ctx.path(dvjson)), upstream_label)
 
 def _patch_settings(repository_ctx, dvjson):
-    if not repository_ctx.attr.settings_patch_template:
-        return
-    template_substitutions = {
-        placeholder: str(repository_ctx.path(label))
-        for placeholder, label in repository_ctx.attr.settings_patch_substitutions.items()
-    }
-    for label in repository_ctx.attr.settings_patch_substitutions.values():
-        repository_ctx.watch(label)
-    expanded_patch = "_settings_patch_expanded.json"
-    repository_ctx.template(expanded_patch, repository_ctx.attr.settings_patch_template, substitutions = template_substitutions)
-    repository_ctx.watch(repository_ctx.attr.settings_patch_template)
-    _execute(
-        repository_ctx,
-        _java(repository_ctx), "-cp", _gson_jar(repository_ctx),
-        str(repository_ctx.path(Label(":SettingsPatcher.java"))),
-        "-d", dvjson,
-        "-p", str(repository_ctx.path(expanded_patch)),
-    )
+    if repository_ctx.attr.settings_patch_template:
+        expanded_patch = "_settings_patch_expanded.json"
+        repository_ctx.template(
+            expanded_patch,
+            repository_ctx.attr.settings_patch_template,
+            substitutions = {
+                placeholder: str(repository_ctx.path(label))
+                for placeholder, label in repository_ctx.attr.settings_patch_substitutions.items()
+            }
+        )
+        _execute(
+            repository_ctx,
+            _java(repository_ctx), "-cp", _gson_jar(repository_ctx), Label("SettingsPatcher.java"),
+            dvjson,
+            expanded_patch,
+        )
+        repository_ctx.watch(repository_ctx.attr.settings_patch_template)
+        for label in repository_ctx.attr.settings_patch_substitutions.values():
+            repository_ctx.watch(label)
 
 def _import_evs_substitution(repository_ctx, bsw_pkg, dvjson, upstream):
     arxml_labels = repository_ctx.attr.evs
@@ -303,11 +302,8 @@ def _ecu_config_repo_impl(repository_ctx):
 ECU_CONFIG_ATTRS = {
     "cfg6_defs": attr.label(doc = "The `defs.bzl` file of the DaVinci Configurator Classic Version 6 tool repo.", allow_single_file = ["defs.bzl"], mandatory = True),
     "bsw_pkg": attr.label(doc = "The BSW package folder.", allow_single_file = True, mandatory = True),
-    "project_archive": attr.label(doc = "An archive containing the project. Mutually exclusive with `dvjson` and `creation_file`."),
-    "project_archive_dvjson": attr.string(doc = "The path to the .dvjson file within the project archive."),
-    "project_archive_type": attr.string(doc = "The type of the project archive (see [extract](https://bazel.build/rules/lib/builtins/repository_ctx#extract.type))."),
-    "dvjson": attr.label(doc = "The existing .dvjson file. Mutually exclusive with `creation_file` and `dvjson_archive_url`.", allow_single_file = [".dvjson"]),
-    "creation_file": attr.label(doc = "Project creation file containing general settings. Mutually exclusive with `dvjson` and `dvjson_archive_url`.", allow_single_file = [".json"]),
+    "dvjson": attr.label(doc = "The existing .dvjson file. Mutually exclusive with `creation_file`.", allow_single_file = [".dvjson"]),
+    "creation_file": attr.label(doc = "Project creation file containing general settings. Mutually exclusive with `dvjson`.", allow_single_file = [".json"]),
     "settings_patch_template": attr.label(doc = """Optional JSON file for patching project settings.
 
 Here is an example for setting `allowMergeConflicts` in the `General.json` file to `true` and removing the mapping for the `Dcm` module from the `moduleDefinitionMappings` array in the `Ifp.json` file:

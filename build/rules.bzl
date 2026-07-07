@@ -1,7 +1,7 @@
 load("@rules_pkg//pkg/private/zip:zip.bzl", "pkg_zip")
 load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 
-_REGISTRY_RELEASE = "3.0.0"
+_RELEASE_TAG = "3.0.1"
 
 _STARDOC_HEADER = "<!-- Generated with Stardoc: http://skydoc.bazel.build -->"
 
@@ -112,7 +112,7 @@ def _build_module_impl(name, version, readme, **kwargs):
         name = source_json_name,
         srcs = [pkg_zip_name],
         outs = ["source.json"],
-        cmd = 'printf \'{"url":"https://github.com/vectorgrp/bazel-regristry/releases/download/' + _REGISTRY_RELEASE + "/" + zip_name + '","integrity":"sha256-%s"}\' $$(openssl dgst -sha256 -binary "$<" | openssl base64 -A) > "$@"',
+        cmd = 'printf \'{"url":"https://github.com/vectorgrp/bazel-regristry/releases/download/' + _RELEASE_TAG + "/" + zip_name + '","integrity":"sha256-%s"}\' $$(openssl dgst -sha256 -binary "$<" | openssl base64 -A) > "$@"',
     )
     build_module_script_name = name + "_build_module"
     build_module_script(
@@ -143,7 +143,7 @@ def _build_all_modules_script_impl(ctx):
     ctx.actions.write(
         output = out,
         is_executable = True,
-        content = "\n".join([_expand_target(ctx, t) for t in ctx.attr.modules])
+        content = 'bail_out() { echo "ERROR: Tag ' + _RELEASE_TAG + ' already exists!"; exit 1; }\ncurl -fsI https://github.com/vectorgrp/bazel-registry/releases/tag/' + _RELEASE_TAG + ' >/dev/null && bail_out\n' + "\n".join([_expand_target(ctx, t) for t in ctx.attr.modules])
     )
     return [DefaultInfo(executable = out, runfiles = ctx.runfiles(files = ctx.files.modules).merge_all([m[DefaultInfo].default_runfiles for m in ctx.attr.modules]))]
 
