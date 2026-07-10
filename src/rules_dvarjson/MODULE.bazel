@@ -1,3 +1,3 @@
 module(name = "rules_dvarjson")
 
-bazel_dep(name = "rules_cfg6", version = "3.0.0")
+bazel_dep(name = "rules_cfg6", version = "3.0.1")

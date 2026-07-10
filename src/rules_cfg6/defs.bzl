@@ -6,7 +6,6 @@ load(":rules.bzl",
     _cfg6_archive = "cfg6_archive",
     _local_cfg6 = "local_cfg6",
     _cfg6_toolchain = "cfg6_toolchain",
-    _generate_bswmd_model = "generate_bswmd_model",
     _generate_foundation_layer = "generate_foundation_layer",
     _script_jar = "script_jar",
     _select_evs = "select_evs",
@@ -42,7 +41,6 @@ load(":rules.bzl",
 cfg6_archive = _cfg6_archive
 local_cfg6 = _local_cfg6
 cfg6_toolchain = _cfg6_toolchain
-generate_bswmd_model = _generate_bswmd_model
 generate_foundation_layer = _generate_foundation_layer
 script_jar = _script_jar
 select_evs = _select_evs
