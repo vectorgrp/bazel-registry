@@ -183,31 +183,6 @@ local_cfg6 = repository_rule(
     implementation = _local_cfg6_impl
 )
 
-def _generate_bswmd_model_impl(ctx):
-    jar = ctx.actions.declare_file("DVCfgAutomationInterfaceBswmdModel_CLASSES-1.0.0.jar")
-    ctx.actions.run_shell(
-        outputs = [jar],
-        command = '"{core}" -application com.vector.cfg.bswmdmgen.app.application && cp "{bsw}/DaVinciConfigurator/DvC6/BswmdModel/DVCfgAutomationInterfaceBswmdModel_CLASSES-1.0.0.jar" "{jar}"'.format(
-            core = ctx.toolchains[":toolchain_type"].cfg6.core,
-            bsw = ctx.attr.bsw_pkg,
-            jar = jar.path
-        ),
-        env = {
-            "JAVA_OPTS": '"-Dcom.vector.cfg.gen.bswmdmodel.option.GenerateSipModel={}"'.format(ctx.attr.bsw_pkg)
-        },
-        use_default_shell_env = True
-    )
-    return [DefaultInfo(files = depset([jar]))]
-
-_BSW_PKG_ATTR = { "bsw_pkg": attr.string(doc = "The BSW package folder.", mandatory = True) }
-
-generate_bswmd_model = rule(
-    doc = "Internal rule for generating the BSWMD model API.",
-    attrs = _BSW_PKG_ATTR,
-    implementation = _generate_bswmd_model_impl,
-    toolchains = [":toolchain_type"]
-)
-
 def _generate_foundation_layer_script_impl(ctx):
     out = ctx.actions.declare_file(ctx.label.name + ".sh")
     ctx.actions.write(
@@ -304,6 +279,8 @@ def _cli_cmd(ctx, input_files, cmd, **kwargs):
         use_default_shell_env = True
     )
     return [DefaultInfo(files = depset([out]))]
+
+_BSW_PKG_ATTR = { "bsw_pkg": attr.string(doc = "The BSW package folder.", mandatory = True) }
 
 _STD_CLI_ATTRS = dict(
     _BSW_PKG_ATTR,

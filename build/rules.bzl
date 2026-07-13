@@ -1,8 +1,6 @@
 load("@rules_pkg//pkg/private/zip:zip.bzl", "pkg_zip")
 load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 
-_RELEASE_TAG = "3.0.1"
-
 _STARDOC_HEADER = "<!-- Generated with Stardoc: http://skydoc.bazel.build -->"
 
 def module_build_props(version):
@@ -69,7 +67,8 @@ def _build_module_script_impl(ctx):
         is_executable = True,
         content = """
 if [ ! -d "{folder}" ]; then
-  mkdir -p "{folder}"; cp "{module_bazel}" "{source_json}" "{readme}" "{folder}"
+  mkdir -p "{folder}"
+  cp "{module_bazel}" "{source_json}" "{readme}" "{folder}"
 fi
 """.format(
             folder = "$BUILD_WORKSPACE_DIRECTORY/modules/" + name + "/" + ctx.attr.version,
@@ -112,7 +111,10 @@ def _build_module_impl(name, version, readme, **kwargs):
         name = source_json_name,
         srcs = [pkg_zip_name],
         outs = ["source.json"],
-        cmd = 'printf \'{"url":"https://github.com/vectorgrp/bazel-regristry/releases/download/' + _RELEASE_TAG + "/" + zip_name + '","integrity":"sha256-%s"}\' $$(openssl dgst -sha256 -binary "$<" | openssl base64 -A) > "$@"',
+        cmd = """
+release_tag=$$(curl -s https://api.github.com/repos/vectorgrp/bazel-registry/tags | grep '"name":' | head -1 | sed 's/.*": "\\([^"]*\\)",/\\1/')
+sha256=$$(openssl dgst -sha256 -binary "$<" | openssl base64 -A)
+printf '{"url":"https://github.com/vectorgrp/bazel-regristry/releases/download/%s/""" + zip_name + '","integrity":"sha256-%s"}\' $$release_tag $$sha256 > "$@"',
     )
     build_module_script_name = name + "_build_module"
     build_module_script(
@@ -143,7 +145,7 @@ def _build_all_modules_script_impl(ctx):
     ctx.actions.write(
         output = out,
         is_executable = True,
-        content = 'bail_out() { echo "ERROR: Tag ' + _RELEASE_TAG + ' already exists!"; exit 1; }\ncurl -fsI https://github.com/vectorgrp/bazel-registry/releases/tag/' + _RELEASE_TAG + ' >/dev/null && bail_out\n' + "\n".join([_expand_target(ctx, t) for t in ctx.attr.modules])
+        content = "\n".join([_expand_target(ctx, t) for t in ctx.attr.modules])
     )
     return [DefaultInfo(executable = out, runfiles = ctx.runfiles(files = ctx.files.modules).merge_all([m[DefaultInfo].default_runfiles for m in ctx.attr.modules]))]
 
