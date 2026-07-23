@@ -227,9 +227,8 @@ generate_foundation_layer = macro(
     implementation = _generate_foundation_layer_impl
 )
 
-def _script_jar_impl(deps, pai, pai_version, script_classes, **kwargs):
+def _script_jar_impl(pai_version, script_classes, **kwargs):
     java_binary(
-        deps = deps + [pai],
         main_class = "com.vector.cfg.WorkaroundForMissinFatJarTarget",
         deploy_manifest_lines = [
             "DvCfg-AutomationInterfaceJars-Compile-Version: " + pai_version,
@@ -242,10 +241,8 @@ def _script_jar_impl(deps, pai, pai_version, script_classes, **kwargs):
 script_jar = macro(
     doc = "Rule for setting up a PAI project.",
     attrs = dict({ k: v for k, v in JAVA_LIBRARY_ATTRS.items() if not k.startswith("_") and k in BASIC_JAVA_BINARY_ATTRIBUTES },
-        pai = attr.label(doc = "PAI libs target.", mandatory = True, configurable = False),
         pai_version = attr.string(doc = "PAI version.", mandatory = True, configurable = False),
         script_classes = attr.string_list(doc = "ScriptFactory class names.", mandatory = True, allow_empty = False, configurable = False),
-        deps = attr.label_list(doc = "[Inherited rule attribute](https://bazel.build/reference/be/java#java_library.deps)", configurable = False),
         tags = attr.string_list(doc = "[Inherited rule attribute](https://bazel.build/reference/be/common-definitions#common.tags)", configurable = False)
     ),
     implementation = _script_jar_impl
