@@ -35,7 +35,8 @@ load(":rules.bzl",
     _archived_project = "archived_project",
     _pipeline_executable = "pipeline_executable",
     _run_on_project = "run_on_project",
-    _apply_bswmd = "apply_bswmd"
+    _apply_bswmd = "apply_bswmd",
+    _dvjson = "dvjson"
 )
 
 cfg6_archive = _cfg6_archive
@@ -71,3 +72,4 @@ archived_project = _archived_project
 pipeline_executable = _pipeline_executable
 run_on_project = _run_on_project
 apply_bswmd = _apply_bswmd
+dvjson = _dvjson
