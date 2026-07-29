@@ -1137,8 +1137,8 @@ dvjson(
 
 it provides the following targets:
 
-- `myecu_create`: executable bazel target for initially creating the project inside the package via `bazel run //:my_project_create`.
-- `myecu.dvjson`: the `.dvjson` file of the project (once it has been created) for later use in, e.g., `dvjson` attribute of module extension `ecu_config.project`.
+- `<name>_create`: executable bazel target for initially creating the project inside the package via `bazel run //:<name>_create`.
+- `<name>.dvjson`: the `.dvjson` file of the project (once it has been created), e.g. for use in `dvjson` attribute of module extension `ecu_config.project`.
 """,
     attrs = {
         "bsw_pkg": attr.label(doc = "The BSW package folder.", allow_single_file = True, mandatory = True)
