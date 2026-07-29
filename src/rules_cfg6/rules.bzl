@@ -162,7 +162,7 @@ def _cfg6_archive_impl(repository_ctx):
 
 cfg6_archive = repository_rule(
     doc = "Rule for using a DaVinci Configurator Classic Version 6 .nupkg or .deb archive.",
-    attrs = dict({ "nupkg_" + k: v for k, v in default_http_archive_attrs(".nupkg", "url").items() }.items(), **default_http_archive_attrs(".deb", "nupkg_url")),
+    attrs = { "nupkg_" + k: v for k, v in default_http_archive_attrs(".nupkg", "url").items() } | default_http_archive_attrs(".deb", "nupkg_url"),
     implementation = _cfg6_archive_impl
 )
 
@@ -183,18 +183,21 @@ local_cfg6 = repository_rule(
     implementation = _local_cfg6_impl
 )
 
-def _generate_foundation_layer_script_impl(ctx):
+def _write_script(ctx, command, targets_dict, **kwargs):
     out = ctx.actions.declare_file(ctx.label.name + ".sh")
     ctx.actions.write(
         out,
-        '"{core}" -application com.vector.cfg.bswmdmgen.app.flApplication -b "{bsw}" --force -o "$BUILD_WORKSPACE_DIRECTORY/{out}"'.format(
-            core = ctx.toolchains[":toolchain_type"].cfg6.core,
-            bsw = _rlocation(ctx, ctx.attr.bsw_pkg),
-            out = ctx.file.output.short_path
-        ),
+        command.format(**({ k: _rlocation(ctx, target) for k, target in targets_dict.items() } | kwargs)),
         is_executable = True
     )
-    return [DefaultInfo(executable = out, runfiles = ctx.runfiles(files = [ctx.file.bsw_pkg]))]
+    return [DefaultInfo(executable = out, runfiles = ctx.runfiles(files = [file for target in targets_dict.values() for file in target[DefaultInfo].files.to_list()]))]
+
+def _generate_foundation_layer_script_impl(ctx):
+    return _write_script(ctx, '"{core}" -application com.vector.cfg.bswmdmgen.app.flApplication -b "{bsw_pkg}" --force -o "$BUILD_WORKSPACE_DIRECTORY/{folder}"',
+        { "bsw_pkg": ctx.attr.bsw_pkg },
+        core = ctx.toolchains[":toolchain_type"].cfg6.core,
+        folder = ctx.file.output.short_path
+    )
 
 generate_foundation_layer_script = rule(
     attrs = {
@@ -1086,4 +1089,59 @@ pipeline_step = macro(
     doc = "Macro for running a generic CLI command on a DaVinci project. The macro automatically adds target `<name>_view_result` for viewing the result in DaVinci Configurator Classic Version 6 GUI tool.",
     inherit_attrs = dvcfg_cli_step,
     implementation = _pipeline_step_impl
+)
+
+def _create_project_script_impl(ctx):
+    return _write_script(ctx, '"{dvcfg}" project create -b "{bsw_pkg}" --project-name {dvjson_name} -o "$BUILD_WORKSPACE_DIRECTORY/{folder}"',
+        { "bsw_pkg": ctx.attr.bsw_pkg },
+        dvcfg = ctx.toolchains[":toolchain_type"].cfg6.cli,
+        dvjson_name = ctx.attr.dvjson_name,
+        folder = ctx.label.package
+    )
+
+create_project_script = rule(
+    attrs = {
+        "bsw_pkg": attr.label(allow_single_file = True, mandatory = True),
+        "dvjson_name": attr.string(mandatory = True)
+    },
+    implementation = _create_project_script_impl,
+    toolchains = [":toolchain_type"]
+)
+
+def _dvjson_impl(name, bsw_pkg, **kwargs):
+    script_name = name + "_create_script"
+    create_project_script(
+        name = script_name,
+        bsw_pkg = bsw_pkg,
+        dvjson_name = name
+    )
+    sh_binary(
+        name = name + "_create",
+        srcs = [script_name],
+        use_bash_launcher = True,
+    )
+    native.exports_files([name + ".dvjson"])
+
+dvjson = macro(
+    doc = """Macro for declaring a DaVinci project.
+
+Best instantiated within an otherwise empty package, like this:
+
+```starlark
+load("@rules_cfg6//:defs.bzl", "dvjson")
+dvjson(
+    name = "myecu",
+    bsw_pkg = "@sip_myecu//:bsw_pkg",
+)
+```
+
+it provides the following targets:
+
+- `<name>_create`: executable bazel target for initially creating the project inside the package via `bazel run //:<name>_create`.
+- `<name>.dvjson`: the `.dvjson` file of the project (once it has been created), e.g. for use in `dvjson` attribute of module extension `ecu_config.project`.
+""",
+    attrs = {
+        "bsw_pkg": attr.label(doc = "The BSW package folder.", allow_single_file = True, mandatory = True)
+    },
+    implementation = _dvjson_impl
 )
