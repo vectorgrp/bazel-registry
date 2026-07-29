@@ -193,8 +193,9 @@ def _write_script(ctx, command, targets_dict, **kwargs):
     return [DefaultInfo(executable = out, runfiles = ctx.runfiles(files = [file for target in targets_dict.values() for file in target[DefaultInfo].files.to_list()]))]
 
 def _generate_foundation_layer_script_impl(ctx):
-    return _write_script(ctx, '"{core}" -application com.vector.cfg.bswmdmgen.app.flApplication -b "{bsw_pkg}" --force -o "$BUILD_WORKSPACE_DIRECTORY/{folder}"',
-        { "bsw_pkg": ctx.attr.bsw_pkg },
+    includelist, substitution = (' --includelist "{filter}"', { "filter": ctx.attr.filter }) if ctx.attr.filter else ("", {})
+    return _write_script(ctx, '"{core}" -application com.vector.cfg.bswmdmgen.app.flApplication -b "{bsw_pkg}" --force -o "$BUILD_WORKSPACE_DIRECTORY/{folder}"' + includelist,
+        { "bsw_pkg": ctx.attr.bsw_pkg } | substitution,
         core = ctx.toolchains[":toolchain_type"].cfg6.core,
         folder = ctx.file.output.short_path
     )
@@ -202,7 +203,8 @@ def _generate_foundation_layer_script_impl(ctx):
 generate_foundation_layer_script = rule(
     attrs = {
         "bsw_pkg": attr.label(doc = "The BSW package folder.", allow_single_file = True, mandatory = True),
-        "output": attr.label(doc = "The output folder.", allow_single_file = True, mandatory = True)
+        "output": attr.label(doc = "The output folder.", allow_single_file = True, mandatory = True),
+        "filter": attr.label(doc = "Optional filter file containing the definition references of all modules to be generated, separated by newlines. If this is not provided all modules are generated.", allow_single_file = True)
     },
     implementation = _generate_foundation_layer_script_impl,
     toolchains = [":toolchain_type"]
