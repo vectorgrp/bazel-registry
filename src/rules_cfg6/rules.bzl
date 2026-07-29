@@ -204,7 +204,7 @@ generate_foundation_layer_script = rule(
     attrs = {
         "bsw_pkg": attr.label(doc = "The BSW package folder.", allow_single_file = True, mandatory = True),
         "output": attr.label(doc = "The output folder.", allow_single_file = True, mandatory = True),
-        "filter": attr.label(doc = "Optional filter file containing the definition references of all modules to be generated, separated by newlines. If this is not provided all modules are generated.", allow_single_file = True)
+        "filter": attr.label(doc = "Optional filter file containing the definition-references of all modules to be generated, separated by newlines. If this is not provided all modules of the BSW package are generated.", allow_single_file = True)
     },
     implementation = _generate_foundation_layer_script_impl,
     toolchains = [":toolchain_type"]
