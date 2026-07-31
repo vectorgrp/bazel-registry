@@ -790,11 +790,11 @@ def _script_patched_arxml_impl(ctx):
     file_args = [single_file_from_target(target) for task in ctx.attr.tasks for target in task[ScriptTaskProvider].file_args.values()]
     ctx.actions.run_shell(
         outputs = [out],
-        inputs =  scripts + file_args + [ctx.file.input] + [ctx.file.evs] if ctx.file.evs else [],
-        command = '"{xpro}" run-script -i "{input}"{evs} -l"{scripts}" -t"{tasks}"{args} "{out}"'.format(
+        inputs =  scripts + file_args + [ctx.file.input] + ctx.files.evs,
+        command = '"{xpro}" run-script -i "{input}"{evs} -l "{scripts}" -t "{tasks}"{args} "{out}"'.format(
             xpro = ctx.toolchains[":toolchain_type"].cfg6.xpro,
             input = ctx.file.input.path,
-            evs =  ' -e "{}"'.format(ctx.file.evs.path) if ctx.file.evs else "",
+            evs =  ' -e "{}"'.format('","'.join([file.path for file in ctx.files.evs])) if ctx.files.evs else "",
             scripts = '","'.join({single_file_from_target(task).path: True for task in ctx.attr.tasks}.keys()),
             tasks = '","'.join([_task_name(task) for task in ctx.attr.tasks]),
             args = _task_args(ctx),
@@ -808,7 +808,7 @@ script_patched_arxml = rule(
     doc = "Rule for patching an .arxml file by applying a script task.",
     attrs = {
         "input": attr.label(doc = "The .arxml file to patch.", allow_single_file = [".arxml"], mandatory = True),
-        "evs": attr.label(doc = "The .arxml file containing the EvaluatedVariantSet (required for variant input only).", allow_single_file = [".arxml"]),
+        "evs": attr.label_list(doc = "The .arxml files containing the EvaluatedVariantSet (required for variant input only).", allow_files = [".arxml"]),
         "tasks": attr.label_list(doc = 'The tasks to execute (see [script_task](#script_task)).', providers = [ScriptTaskProvider], allow_empty = False, mandatory = True)
     },
     implementation = _script_patched_arxml_impl,
