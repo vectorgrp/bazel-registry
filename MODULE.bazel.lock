@@ -206,8 +206,8 @@
   "moduleExtensions": {
     "//src/rules_ecu_config:ecu_config.bzl%ecu_config": {
       "general": {
-        "bzlTransitiveDigest": "y0Pw2K4LRICln+KY1VyZNVjacHJlTxP5PF1OHV/V1qY=",
-        "usagesDigest": "JaQZ1sajtUwdXy16L5xGccpzva677liczGzkc7BMLoA=",
+        "bzlTransitiveDigest": "L3SltPMLgeKRLxwH5Eaf2FMgqk6EH50C8C03ufZ4uFU=",
+        "usagesDigest": "amg/eR66UtBdDxS4V33QhAcyZcwQjGrx3g2oz1deHEE=",
         "recordedInputs": [
           "REPO_MAPPING:,cfg6 +cfg6_archive+cfg6",
           "REPO_MAPPING:,rules_cfg6 +local_repository+rules_cfg6",
@@ -237,7 +237,6 @@
             "attributes": {
               "cfg6_defs": "@@+cfg6_archive+cfg6//:defs.bzl",
               "bsw_pkg": "@@//:build/davinci/bsw",
-              "creation_file": "@@//:build/davinci/project-creation.json",
               "settings_patch_substitutions": {},
               "evs": [],
               "extract": [],

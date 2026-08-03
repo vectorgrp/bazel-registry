@@ -63,9 +63,8 @@ def _dvjson_substitution(repository_ctx):
         return (bsw_pkg, str(dvjson_path), upstream_label)
     cli = _cli(repository_ctx)
     repository_ctx.watch(cli)
-    _execute(repository_ctx, cli, "project", "create", "-b", bsw_pkg, "-f", repository_ctx.attr.creation_file, "--project-name", repository_ctx.original_name, "-o", "_")
+    _execute(repository_ctx, cli, "project", "create", "-b", bsw_pkg, "--project-name", repository_ctx.original_name, "-o", "_")
     dvjson = "_/{}.dvjson".format(repository_ctx.original_name)
-    repository_ctx.watch(repository_ctx.attr.creation_file)
     return (bsw_pkg, str(repository_ctx.path(dvjson)), upstream_label)
 
 def _patch_settings(repository_ctx, dvjson):
@@ -302,9 +301,8 @@ def _ecu_config_repo_impl(repository_ctx):
 ECU_CONFIG_ATTRS = {
     "cfg6_defs": attr.label(doc = "The `defs.bzl` file of the DaVinci Configurator Classic Version 6 tool repo.", allow_single_file = ["defs.bzl"], mandatory = True),
     "bsw_pkg": attr.label(doc = "The BSW package folder.", allow_single_file = True, mandatory = True),
-    "dvjson": attr.label(doc = "The existing .dvjson file. Mutually exclusive with `creation_file`.", allow_single_file = [".dvjson"]),
-    "creation_file": attr.label(doc = "Project creation file containing general settings. Mutually exclusive with `dvjson`.", allow_single_file = [".json"]),
-    "settings_patch_template": attr.label(doc = """Optional JSON file for patching project settings.
+    "dvjson": attr.label(doc = "The existing .dvjson file. Mutually exclusive with `settings_patch_template`.", allow_single_file = [".dvjson"]),
+    "settings_patch_template": attr.label(doc = """Optional JSON file for patching project settings. Mutually exclusive with `dvjson`.
 
 Here is an example for setting `allowMergeConflicts` in the `General.json` file to `true` and removing the mapping for the `Dcm` module from the `moduleDefinitionMappings` array in the `Ifp.json` file:
 

@@ -44,7 +44,6 @@ ecu_config = use_extension("//src/rules_ecu_config:ecu_config.bzl", "ecu_config"
 ecu_config.project(
     name = "MyProject",
     bsw_pkg = "build/davinci/bsw",
-    cfg6_defs = "@cfg6//:defs.bzl",
-    creation_file = "build/davinci/project-creation.json"
+    cfg6_defs = "@cfg6//:defs.bzl"
 )
 use_repo(ecu_config, "MyProject")
