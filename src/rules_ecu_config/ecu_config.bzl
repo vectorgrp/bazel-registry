@@ -11,7 +11,6 @@ def create_ecu_config_repos(module_ctx, get_cfg6_defs):
                 cfg6_defs = get_cfg6_defs(proj),
                 bsw_pkg = proj.bsw_pkg,
                 dvjson = proj.dvjson,
-                creation_file = proj.creation_file,
                 settings_patch_template = proj.settings_patch_template,
                 settings_patch_substitutions = proj.settings_patch_substitutions,
                 evs = proj.evs,
