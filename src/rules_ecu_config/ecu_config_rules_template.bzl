@@ -25,12 +25,13 @@ def _dbg_target(name, jars):
         visibility = ["//visibility:public"]
     )
 
-def _eac_jar_impl(name, plugins, arg, **kwargs):
+def _eac_jar_impl(name, plugins, arg, tags, **kwargs):
     jar_name = name + "_jar"
     script_jar(
         name = jar_name,
         plugins = plugins + ["CFG6_EAC_AP"],
         script_classes = ["com.vector.eac.EaC"],
+        tags = tags + ["manual"],
         **kwargs
     )
     as_code_eac(
