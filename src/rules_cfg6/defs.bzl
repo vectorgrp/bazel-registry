@@ -36,7 +36,8 @@ load(":rules.bzl",
     _pipeline_executable = "pipeline_executable",
     _run_on_project = "run_on_project",
     _apply_bswmd = "apply_bswmd",
-    _dvjson = "dvjson"
+    _dvjson = "dvjson",
+    _sac = "sac"
 )
 
 cfg6_archive = _cfg6_archive
@@ -73,3 +74,4 @@ pipeline_executable = _pipeline_executable
 run_on_project = _run_on_project
 apply_bswmd = _apply_bswmd
 dvjson = _dvjson
+sac = _sac

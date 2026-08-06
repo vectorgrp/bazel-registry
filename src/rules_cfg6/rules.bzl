@@ -190,7 +190,7 @@ def _write_script(ctx, command, targets_dict, **kwargs):
         command.format(**({ k: _rlocation(ctx, target) for k, target in targets_dict.items() } | kwargs)),
         is_executable = True
     )
-    return [DefaultInfo(executable = out, runfiles = ctx.runfiles(files = [file for target in targets_dict.values() for file in target[DefaultInfo].files.to_list()]))]
+    return [DefaultInfo(executable = out, runfiles = ctx.runfiles(files = [file for targets in targets_dict.values() for target in (targets if type(targets) == _LIST_TYPE else [targets]) for file in target[DefaultInfo].files.to_list()]))]
 
 def _generate_foundation_layer_script_impl(ctx):
     includelist, substitution = (' --includelist "{filter}"', { "filter": ctx.attr.filter }) if ctx.attr.filter else ("", {})
@@ -244,9 +244,9 @@ def _script_jar_impl(pai_version, script_classes, **kwargs):
     )
 
 script_jar = macro(
-    doc = "Rule for setting up a PAI project.",
+    doc = "Internal macro for setting up a PAI project.",
     attrs = dict({ k: v for k, v in JAVA_LIBRARY_ATTRS.items() if not k.startswith("_") and k in BASIC_JAVA_BINARY_ATTRIBUTES },
-        pai_version = attr.string(doc = "PAI version.", mandatory = True, configurable = False),
+        pai_version = attr.string(mandatory = True, configurable = False),
         script_classes = attr.string_list(doc = "ScriptFactory class names.", mandatory = True, allow_empty = False, configurable = False),
         tags = attr.string_list(doc = "[Inherited rule attribute](https://bazel.build/reference/be/common-definitions#common.tags)", configurable = False)
     ),
@@ -786,7 +786,7 @@ def _task_args(ctx):
 
 def _script_patched_arxml_impl(ctx):
     out = ctx.actions.declare_file(ctx.label.name + ".arxml")
-    scripts = {single_file_from_target(task): True for task in ctx.attr.tasks}.keys()
+    scripts = { single_file_from_target(task): True for task in ctx.attr.tasks }.keys()
     file_args = [single_file_from_target(target) for task in ctx.attr.tasks for target in task[ScriptTaskProvider].file_args.values()]
     ctx.actions.run_shell(
         outputs = [out],
@@ -804,13 +804,15 @@ def _script_patched_arxml_impl(ctx):
     )
     return [DefaultInfo(files = depset([out]))]
 
+_SCRIPT_PATCHED_ARXML_ATTRS = {
+    "input": attr.label(doc = "The .arxml file to patch.", allow_single_file = [".arxml"], default = Label("empty.arxml")),
+    "evs": attr.label_list(doc = "The .arxml files containing the EvaluatedVariantSet (required for variant input only).", allow_files = [".arxml"]),
+    "tasks": attr.label_list(doc = 'The tasks to execute (see [script_task](#script_task)).', providers = [ScriptTaskProvider], allow_empty = False, mandatory = True)
+}
+
 script_patched_arxml = rule(
     doc = "Rule for patching an .arxml file by applying a script task.",
-    attrs = {
-        "input": attr.label(doc = "The .arxml file to patch.", allow_single_file = [".arxml"], mandatory = True),
-        "evs": attr.label_list(doc = "The .arxml files containing the EvaluatedVariantSet (required for variant input only).", allow_files = [".arxml"]),
-        "tasks": attr.label_list(doc = 'The tasks to execute (see [script_task](#script_task)).', providers = [ScriptTaskProvider], allow_empty = False, mandatory = True)
-    },
+    attrs = _SCRIPT_PATCHED_ARXML_ATTRS,
     implementation = _script_patched_arxml_impl,
     toolchains = [":toolchain_type"]
 )
@@ -874,6 +876,8 @@ dvcfg_cli_step = rule(
 )
 
 def _rlocation(ctx, target):
+    if type(target) == _LIST_TYPE:
+        return '","'.join(["$(rlocation {})".format(ctx.expand_location("$(rlocationpath {})".format(t.label), [t])) for t in target])
     return "$(rlocation {})".format(ctx.expand_location("$(rlocationpath {})".format(target.label), [target]))
 
 def _dvcfg_cli_executable_script_impl(ctx):
@@ -1146,4 +1150,92 @@ it provides the following targets:
         "bsw_pkg": attr.label(doc = "The BSW package folder.", allow_single_file = True, mandatory = True)
     },
     implementation = _dvjson_impl
+)
+
+_dbg_script_postfix = "_dbg_script"
+
+def _sac_dbg_script_impl(ctx):
+    command = '''
+if [[ "${{EAC_DEBUG-}}" == "true" ]]; then
+    export DVCFG_JVM_ARGS='-agentlib:jdwp=transport=dt_socket,server=y,suspend=n -Djdk.attach.allowAttachSelf=true'
+    export IDE_INTEGRATION_PORT="${{EAC_IDE_PORT-}}"
+fi
+
+_term() {{
+    kill "$child" 2>/dev/null
+}}
+trap _term SIGINT
+
+"{xpro}" run-script -i "{input}" ''' + ('-e "{evs}" ' if ctx.attr.evs else "") + '''-l "{jar}" -t "{task}" "$BUILD_WORKSPACE_DIRECTORY/{pkg}/{name}.arxml" &
+
+child=$!
+wait "$child"
+'''
+    return _write_script(ctx, command,
+        {
+            "input": ctx.attr.input,
+            "evs": ctx.attr.evs,
+            "jar": ctx.attr.tasks[0]
+        },
+        xpro = ctx.toolchains[":toolchain_type"].cfg6.xpro,
+        task = ctx.attr.task_name,
+        pkg = ctx.label.package,
+        name = ctx.label.name[:-len(_dbg_script_postfix)]
+    )
+
+_SAC_ATTRS = dict(
+    _SCRIPT_PATCHED_ARXML_ATTRS,
+    task_name = attr.string(default = "SaC")
+)
+
+sac_dbg_script = rule(
+    attrs = _SAC_ATTRS,
+    implementation = _sac_dbg_script_impl,
+    toolchains = [":toolchain_type"]
+)
+
+def _sac_impl(name, code, script_classes, task_name, pai_version, **kwargs):
+    script_jar_name = name + "_script_jar"
+    script_jar(
+        name = script_jar_name,
+        script_classes = script_classes,
+        runtime_deps = code,
+        pai_version = pai_version,
+        tags = ["manual"]
+    )
+    script_task_name = name + "_script_task"
+    script_task(
+        name = script_task_name,
+        script = script_jar_name + "_deploy.jar",
+        task_name = task_name
+    )
+    tasks = [script_task_name]
+    script_patched_arxml(
+        name = name,
+        tasks = tasks,
+        **kwargs
+    )
+    dbg_script_name = name + _dbg_script_postfix
+    sac_dbg_script(
+        name = dbg_script_name,
+        tasks = tasks,
+        task_name = task_name,
+        **{ k: kwargs[k] for k in _SCRIPT_PATCHED_ARXML_ATTRS.keys() if k != "tasks" }
+    )
+    sh_binary(
+        name = name + "_dbg",
+        srcs = [dbg_script_name],
+        use_bash_launcher = True,
+    )
+
+sac = macro(
+    doc = "Internal macro for setting up SaC.",
+    inherit_attrs = script_patched_arxml,
+    attrs = dict(_SAC_ATTRS,
+        tasks = None,
+        code = JAVA_LIBRARY_ATTRS["runtime_deps"],
+        script_classes = attr.string_list(default = ["SaC"], configurable = False),
+        pai_version = attr.string(mandatory = True, configurable = False)
+    ),
+    implementation = _sac_impl
 )

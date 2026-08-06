@@ -14,7 +14,7 @@ cfg6_toolchain(
     gui_template = 'TEMPLATE',
     result_file_cmd = "RESULT_FILE_CMD",
     pack = 'COMPRESS',
-    unpack = 'UNPACK',
+    unpack = 'UNPACK'
 )
 
 toolchain(
