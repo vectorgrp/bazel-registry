@@ -43,5 +43,6 @@ java_import(
     jars = glob(
         include = ["_/dvcfgpai/libs/*.jar"],
         exclude = ["_/dvcfgpai/libs/*-sources.jar"]
-    )
+    ),
+    neverlink = True
 )
