@@ -1,4 +1,4 @@
-load("@rules_cfg6//:rules.bzl", "AsCodeTypeProvider", "AsCodeArgProvider", "single_file_from_target")
+load("@rules_cfg6//:rules.bzl", "AsCodeArgProvider", "AsCodeTypeProvider", "single_file_from_target")
 
 def _get_normalized_path(repository_ctx, json_label, path_in_json):
     path_in_json = path_in_json.replace("\\", "/")
@@ -38,7 +38,7 @@ def _gson_jar(repository_ctx):
 def _execute(repository_ctx, *cmd_and_args):
     ret = repository_ctx.execute(
         cmd_and_args,
-        quiet = False
+        quiet = False,
     )
     if ret.return_code != 0:
         fail(ret.stderr)
@@ -76,11 +76,14 @@ def _patch_settings(repository_ctx, dvjson):
             substitutions = {
                 placeholder: str(repository_ctx.path(label))
                 for placeholder, label in repository_ctx.attr.settings_patch_substitutions.items()
-            }
+            },
         )
         _execute(
             repository_ctx,
-            _java(repository_ctx), "-cp", _gson_jar(repository_ctx), Label("SettingsPatcher.java"),
+            _java(repository_ctx),
+            "-cp",
+            _gson_jar(repository_ctx),
+            Label("SettingsPatcher.java"),
             dvjson,
             expanded_patch,
         )
@@ -108,11 +111,11 @@ def _import_evs_substitution(repository_ctx, bsw_pkg, dvjson, upstream):
     upstream = "{upstream}"
 )
 """.format(
-    evs = '", "'.join([str(label) for label in arxml_labels]),
-    bsw_pkg = bsw_pkg,
-    dvjson = dvjson,
-    upstream = upstream
-)
+        evs = '", "'.join([str(label) for label in arxml_labels]),
+        bsw_pkg = bsw_pkg,
+        dvjson = dvjson,
+        upstream = upstream,
+    )
     return ("import_evs", substitution)
 
 def _apply_bswmd_substitution(repository_ctx, bsw_pkg, dvjson, upstream):
@@ -137,11 +140,11 @@ def _derive_ecuc_substitution(repository_ctx, bsw_pkg, dvjson, upstream):
     upstream = "{upstream}"
 )
 """.format(
-    extract = '", "'.join([str(label) for label in repository_ctx.attr.extract]),
-    bsw_pkg = bsw_pkg,
-    dvjson = dvjson,
-    upstream = upstream
-)) if repository_ctx.attr.extract else (upstream, "")
+        extract = '", "'.join([str(label) for label in repository_ctx.attr.extract]),
+        bsw_pkg = bsw_pkg,
+        dvjson = dvjson,
+        upstream = upstream,
+    )) if repository_ctx.attr.extract else (upstream, "")
 
 def _import_modules_substitution(repository_ctx, bsw_pkg, dvjson, upstream):
     return ("import_modules", """import_modules(
@@ -152,11 +155,11 @@ def _import_modules_substitution(repository_ctx, bsw_pkg, dvjson, upstream):
     upstream = "{upstream}"
 )
 """.format(
-    modules = '", "'.join([str(label) for label in repository_ctx.attr.modules]),
-    bsw_pkg = bsw_pkg,
-    dvjson = dvjson,
-    upstream = upstream
-)) if repository_ctx.attr.modules else (upstream, "")
+        modules = '", "'.join([str(label) for label in repository_ctx.attr.modules]),
+        bsw_pkg = bsw_pkg,
+        dvjson = dvjson,
+        upstream = upstream,
+    )) if repository_ctx.attr.modules else (upstream, "")
 
 def _get_file_extension(path):
     name = path.basename
@@ -199,14 +202,14 @@ ddm(
     json = "ddm_json_{index}"
 )
 """.format(
-    index = count,
-    bsw = bsw_pkg,
-    ecu = diagnosticData["ecu"],
-    variant = diagnosticData["variant"],
-    single_signal = "importDIDsAndRIDsAsSingleSignal" in diagnosticData and diagnosticData["importDIDsAndRIDsAsSingleSignal"],
-    generic_legacy_import = "genericLegacyDiagnosticImport" in diagnosticData and diagnosticData["genericLegacyDiagnosticImport"],
-    patch_file = patch_file
-)
+                index = count,
+                bsw = bsw_pkg,
+                ecu = diagnosticData["ecu"],
+                variant = diagnosticData["variant"],
+                single_signal = "importDIDsAndRIDsAsSingleSignal" in diagnosticData and diagnosticData["importDIDsAndRIDsAsSingleSignal"],
+                generic_legacy_import = "genericLegacyDiagnosticImport" in diagnosticData and diagnosticData["genericLegacyDiagnosticImport"],
+                patch_file = patch_file,
+            )
             arxml_labels.append("diag_module_{}".format(count))
         else:
             arxml_labels.append(str(label))
@@ -218,11 +221,11 @@ ddm(
     upstream = "{upstream}"
 )
 """.format(
-    modules = '", "'.join(arxml_labels),
-    bsw_pkg = bsw_pkg,
-    dvjson = dvjson,
-    upstream = upstream
-))
+        modules = '", "'.join(arxml_labels),
+        bsw_pkg = bsw_pkg,
+        dvjson = dvjson,
+        upstream = upstream,
+    ))
 
 def _update_project_substitution(repository_ctx, bsw_pkg, dvjson, upstream):
     return ("update_project", """update_project(
@@ -233,11 +236,11 @@ def _update_project_substitution(repository_ctx, bsw_pkg, dvjson, upstream):
     upstream = "{upstream}"
 )
 """.format(
-    switches = repository_ctx.attr.update_switches,
-    bsw_pkg = bsw_pkg,
-    dvjson = dvjson,
-    upstream = upstream
-)) if dvjson != upstream else (upstream, "")
+        switches = repository_ctx.attr.update_switches,
+        bsw_pkg = bsw_pkg,
+        dvjson = dvjson,
+        upstream = upstream,
+    )) if dvjson != upstream else (upstream, "")
 
 def _as_code_substitution(repository_ctx, bsw_pkg, dvjson, upstream):
     return ("as_code", """alias(
@@ -252,10 +255,10 @@ as_code(
     upstream = "{upstream}"
 )
 """.format(
-    bsw_pkg = bsw_pkg,
-    dvjson = dvjson,
-    upstream = upstream
-)) if repository_ctx.attr.as_code else (upstream, "")
+        bsw_pkg = bsw_pkg,
+        dvjson = dvjson,
+        upstream = upstream,
+    )) if repository_ctx.attr.as_code else (upstream, "")
 
 def _ecu_config_repo_impl(repository_ctx):
     repository_ctx.template("defs.bzl", Label("ecu_config_defs_template.bzl"))
@@ -281,8 +284,8 @@ def _ecu_config_repo_impl(repository_ctx):
             "AS_CODE": AS_CODE,
             "BSW": bsw_pkg,
             "DVJSON": dvjson,
-            "GUI_PROJECT": upstream
-        }
+            "GUI_PROJECT": upstream,
+        },
     )
     repository_ctx.template(
         "rules.bzl",
@@ -294,8 +297,8 @@ def _ecu_config_repo_impl(repository_ctx):
             "FOUNDATION_LAYER_PKG": str(repository_ctx.attr.bsw_pkg),
             "BSW": bsw_pkg,
             "DVJSON": dvjson,
-            "GUI_PROJECT": upstream
-        }
+            "GUI_PROJECT": upstream,
+        },
     )
 
 ECU_CONFIG_ATTRS = {
@@ -342,12 +345,12 @@ Use `{"{{OUTPUT_DIR}}": "//pkg:target"}` to replace the text `{{OUTPUT_DIR}}` in
 `r`: Apply changes to the RTE configuration.<br/>
 `e`: Apply changes from evaluated variant set.
 '''),
-    "as_code": attr.label_list(doc = "List of as-code .jar files. Each .jar must be tagged with `as_code_eac`. The .jar files are applied in the order given here.", allow_empty = False)
+    "as_code": attr.label_list(doc = "List of as-code .jar files. Each .jar must be tagged with `as_code_eac`. The .jar files are applied in the order given here.", allow_empty = False),
 }
 
 ecu_config_repo = repository_rule(
     attrs = ECU_CONFIG_ATTRS,
-    implementation = _ecu_config_repo_impl
+    implementation = _ecu_config_repo_impl,
 )
 
 _PRIMITIVE_TYPE = type("")
@@ -490,12 +493,12 @@ def _dbg_as_code_script_impl(ctx):
         is_executable = True,
         template = ctx.file._template,
         substitutions = {
-            "FILE_ARGS": "\n".join(['FILE_ARG_{}={}'.format(i, '"$(rlocation {})"'.format(ctx.expand_location("$(rlocationpath {})".format(target.label), [target]))) for i, target in enumerate(file_targets)]),
+            "FILE_ARGS": "\n".join(["FILE_ARG_{}={}".format(i, '"$(rlocation {})"'.format(ctx.expand_location("$(rlocationpath {})".format(target.label), [target]))) for i, target in enumerate(file_targets)]),
             "CLI": ctx.toolchains["@rules_cfg6//:toolchain_type"].cfg6.cli,
             "DVJSON": ctx.attr.dvjson,
             "BSW_PKG": ctx.attr.bsw_pkg,
-            "JARS": ' -c "{}"'.format('" -c "'.join(jar_locations)) if jar_locations else ""
-        }
+            "JARS": ' -c "{}"'.format('" -c "'.join(jar_locations)) if jar_locations else "",
+        },
     )
     return [DefaultInfo(executable = script, runfiles = ctx.runfiles(files = files))]
 
@@ -505,9 +508,8 @@ dbg_as_code_script = rule(
         "bsw_pkg": attr.string(mandatory = True),
         "jars": attr.label_list(providers = [AsCodeTypeProvider]),
         "upstream": attr.label_list(allow_files = True),
-        "_template": attr.label(default = Label(":dbg_as_code_script_template.sh"), allow_single_file = True)
+        "_template": attr.label(default = Label(":dbg_as_code_script_template.sh"), allow_single_file = True),
     },
     implementation = _dbg_as_code_script_impl,
-    toolchains = ["@rules_cfg6//:toolchain_type"]
+    toolchains = ["@rules_cfg6//:toolchain_type"],
 )
-

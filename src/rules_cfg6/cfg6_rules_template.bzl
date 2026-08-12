@@ -1,4 +1,4 @@
-load("@rules_cfg6//:defs.bzl", _script_jar = "script_jar", _sac = "sac")
+load("@rules_cfg6//:defs.bzl", _sac = "sac", _script_jar = "script_jar")
 
 def _call_with_pai_version(function, **kwargs):
     function(
@@ -10,9 +10,9 @@ script_jar = macro(
     doc = "Rule for setting up a PAI project.",
     inherit_attrs = _script_jar,
     attrs = {
-        "pai_version": None
+        "pai_version": None,
     },
-    implementation = lambda **kwargs: _call_with_pai_version(_script_jar, **kwargs)
+    implementation = lambda **kwargs: _call_with_pai_version(_script_jar, **kwargs),
 )
 
 sac = macro(
@@ -23,7 +23,7 @@ sac = macro(
 """,
     inherit_attrs = _sac,
     attrs = {
-        "pai_version": None
+        "pai_version": None,
     },
-    implementation = lambda **kwargs: _call_with_pai_version(_sac, **kwargs)
+    implementation = lambda **kwargs: _call_with_pai_version(_sac, **kwargs),
 )

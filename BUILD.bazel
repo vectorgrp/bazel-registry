@@ -1,8 +1,27 @@
+load("@buildifier_prebuilt//:rules.bzl", "buildifier")
 load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 
 sh_binary(
     name = "build_all_modules",
     srcs = ["//build:build_all_modules_script"],
+    args = ["--verbose_failures"],
     use_bash_launcher = True,
-    args = ["--verbose_failures"]
+)
+
+buildifier(
+    name = "buildifier_check",
+    exclude_patterns = [
+        "./modules/*",
+    ],
+    lint_mode = "warn",
+    mode = "check",
+)
+
+buildifier(
+    name = "buildifier_fix",
+    exclude_patterns = [
+        "./modules/*",
+    ],
+    lint_mode = "warn",
+    mode = "fix",
 )

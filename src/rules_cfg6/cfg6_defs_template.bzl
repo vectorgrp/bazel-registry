@@ -1,4 +1,4 @@
-load(":rules.bzl", _script_jar = "script_jar", _sac = "sac")
+load(":rules.bzl", _sac = "sac", _script_jar = "script_jar")
 
 script_jar = _script_jar
 sac = _sac

@@ -18,7 +18,7 @@ def create_ecu_config_repos(module_ctx, get_cfg6_defs):
                 modules = proj.modules,
                 diag_modules = proj.diag_modules,
                 update_switches = proj.update_switches,
-                as_code = proj.as_code
+                as_code = proj.as_code,
             )
 
 def _ecu_config_impl(module_ctx):
@@ -32,7 +32,7 @@ ecu_config = module_extension(
             doc = """Creates a DaVinci project repo for configuring an ECU and generating the BSW code.
 
 Import the repo with `use_repo(ecu_config, "MyProject")`.""",
-            attrs = ECU_CONFIG_ATTRS
-        )
-    }
+            attrs = ECU_CONFIG_ATTRS,
+        ),
+    },
 )
