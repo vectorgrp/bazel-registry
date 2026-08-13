@@ -133,7 +133,7 @@ package(default_visibility = ["//visibility:public"])
 
 cfg6_hermetic_toolchain(
     name = "cfg6_toolchain_config",
-    files = glob(["*"]),{}
+    files = glob(["**"]),{}
 )
 
 java_import(
