@@ -1,5 +1,4 @@
-load("@buildifier_prebuilt//:rules.bzl", "buildifier")
-load("defs.bzl", "as_code_arg")
+load("//:rules/eac.bzl", "cfg6_eac_argument")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -11,18 +10,12 @@ filegroup(
 
 toolchain_type(name = "toolchain_type")
 
-as_code_arg(
+cfg6_eac_argument(
     name = "false",
     value = "false",
 )
 
-as_code_arg(
+cfg6_eac_argument(
     name = "true",
     value = "true",
-)
-
-buildifier(
-    name = "buildifier_fix",
-    lint_mode = "warn",
-    mode = "fix",
 )

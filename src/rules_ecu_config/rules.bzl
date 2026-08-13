@@ -178,12 +178,12 @@ def _import_diag_modules_substitution(repository_ctx, bsw_pkg, dvjson, upstream)
         if label.name.endswith(".json"):
             count += 1
             parsed = json.decode(repository_ctx.read(label))
-            diagnosticData = parsed["diagnosticData"]
+            diagnostic_data = parsed["diagnosticData"]
             cdd_path = _get_normalized_path(repository_ctx, label, diagnosticData["cdd"])
             repository_ctx.symlink(cdd_path, "linked_cdd_{}.cdd".format(count))
             patch_file = "None"
-            if "diagnosticDescriptionPatchFile" in diagnosticData:
-                patch_file_path = _get_normalized_path(repository_ctx, label, diagnosticData["diagnosticDescriptionPatchFile"])
+            if "diagnosticDescriptionPatchFile" in diagnostic_data:
+                patch_file_path = _get_normalized_path(repository_ctx, label, diagnostic_data["diagnosticDescriptionPatchFile"])
                 patch_file = "linked_patch_{}{}".format(count, _get_file_extension(patch_file_path))
                 repository_ctx.symlink(patch_file_path, patch_file)
                 patch_file = '"' + patch_file + '"'
@@ -204,10 +204,10 @@ ddm(
 """.format(
                 index = count,
                 bsw = bsw_pkg,
-                ecu = diagnosticData["ecu"],
-                variant = diagnosticData["variant"],
-                single_signal = "importDIDsAndRIDsAsSingleSignal" in diagnosticData and diagnosticData["importDIDsAndRIDsAsSingleSignal"],
-                generic_legacy_import = "genericLegacyDiagnosticImport" in diagnosticData and diagnosticData["genericLegacyDiagnosticImport"],
+                ecu = diagnostic_data["ecu"],
+                variant = diagnostic_data["variant"],
+                single_signal = "importDIDsAndRIDsAsSingleSignal" in diagnostic_data and diagnostic_data["importDIDsAndRIDsAsSingleSignal"],
+                generic_legacy_import = "genericLegacyDiagnosticImport" in diagnostic_data and diagnostic_data["genericLegacyDiagnosticImport"],
                 patch_file = patch_file,
             )
             arxml_labels.append("diag_module_{}".format(count))
