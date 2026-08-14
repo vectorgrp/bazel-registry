@@ -1,6 +1,6 @@
 """Rules for exporting extracts out of dvcfg6 project."""
 
-load("//:private/project_transform.bzl", "cfg6_project_transform_rule")
+load("//private:project_transform.bzl", "cfg6_project_transform_rule")
 
 _STD_EXPORT_ATTRS = dict(
     binding_time = attr.string(doc = "Binding time to use for the export."),

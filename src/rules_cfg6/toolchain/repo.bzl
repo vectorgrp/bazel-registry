@@ -189,7 +189,7 @@ toolchain(
         "@platforms//cpu:x86_64",
     ],
     toolchain = "@{package_repo}//:cfg6_toolchain_config",
-    toolchain_type = "@rules_cfg6//:toolchain_type",
+    toolchain_type = "@rules_cfg6//toolchain:toolchain_type",
 )
 """.format(package_repo = package_repo, os = os)
         eac_annotation_proc_select["@platforms//os:{}".format(os)] = ["@{}//:eac_annotation_processor_deps".format(package_repo)]
@@ -240,7 +240,7 @@ toolchain(
         "@platforms//cpu:x86_64",
     ],
     toolchain = ":dvcfg6_toolchain_{os}_config",
-    toolchain_type = "@rules_cfg6//:toolchain_type",
+    toolchain_type = "@rules_cfg6//toolchain:toolchain_type",
 )
 
 java_import(

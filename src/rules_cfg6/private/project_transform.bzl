@@ -1,15 +1,15 @@
 """Rule builder for dvcfg6 project transformation step rules."""
 
-load("//:private/project_provider.bzl", "Cfg6ProjectInfo", "UPSTREAM_ATTR", "get_bsw_pkg_root", "get_project_root")
+load("//private:project_provider.bzl", "Cfg6ProjectInfo", "UPSTREAM_ATTR", "get_bsw_pkg_root", "get_project_root")
 load("//toolchain:defs.bzl", "TOOLCHAIN_TYPE")
 
-cfg6_project_transform_script = """
+_PROJECT_TRANSFORM_LAUNCHER_SCRIPT = """
 set -euo pipefail
 
 dvcfg_exe="$(realpath $1)"
 in_project_dir="$2"
 out_project_dir="$3"
-sip_root_dir="$4"
+bsw_pkg_dir="$4"
 command="$5"
 shift 5
 
@@ -26,14 +26,11 @@ export LOCALAPPDATA="$fakehome"
 export APPDATA="$fakehome"
 export DVCFG_JVM_ARGS="-Duser.home=$fakehome"
 export JAVA_OPTS="-Duser.home=$fakehome"
-echo YYY
-echo "$dvcfg_exe" $command -p "$out_project_dir" -b "$sip_root_dir" $@
-echo XXXX
 
 trap "\\"$dvcfg_exe\\" stop -p \\"$out_project_dir\\" || true" EXIT
-"$dvcfg_exe" $command -p "$out_project_dir" -b "$sip_root_dir" $@
+"$dvcfg_exe" $command -p "$out_project_dir" -b "$bsw_pkg_dir" $@
 
-rm -rf \\"$tmp_dir\\" || true
+rm -rf "$tmp_dir" || true
     """
 
 def cfg6_project_transform_rule(*, command_builder, attrs = {}, **kwargs):
@@ -70,7 +67,7 @@ def cfg6_project_transform_rule(*, command_builder, attrs = {}, **kwargs):
             arguments.append(command_info.args)
 
         ctx.actions.run_shell(
-            command = cfg6_project_transform_script,
+            command = _PROJECT_TRANSFORM_LAUNCHER_SCRIPT,
             arguments = arguments,
             outputs = outputs,
             inputs = depset(inputs, transitive = transitive_inputs),

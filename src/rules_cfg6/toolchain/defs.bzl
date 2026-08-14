@@ -1,6 +1,6 @@
 """Toolchain definitions for DaVinci Configurator Classic 6."""
 
-TOOLCHAIN_TYPE = Label("//:toolchain_type")
+TOOLCHAIN_TYPE = Label(":toolchain_type")
 
 Cfg6ToolchainInfo = provider("dvcfg6 toolchain", fields = ["cli_exe", "core_exe", "xpro_exe", "gui_exe", "files"])
 

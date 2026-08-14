@@ -1,7 +1,7 @@
 """Rules for importing configurations into a dvcfg6 project."""
 
-load("//:private/project_provider.bzl", "Cfg6ProjectInfo")
-load("//:private/project_transform.bzl", "cfg6_project_transform_rule")
+load("//private:project_provider.bzl", "Cfg6ProjectInfo")
+load("//private:project_transform.bzl", "cfg6_project_transform_rule")
 
 VariantNameInfo = provider("Variant Name", fields = ["variant"])
 EvsShortNamePathInfo = provider("Evs ShortNamePath", fields = ["evs_path"])

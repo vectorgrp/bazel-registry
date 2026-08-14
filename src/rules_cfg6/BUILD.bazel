@@ -1,4 +1,4 @@
-load("//:rules/eac.bzl", "cfg6_eac_argument")
+load("//rules:eac.bzl", "cfg6_eac_argument")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -7,8 +7,6 @@ filegroup(
     srcs = glob(["**"]),
     visibility = ["//build:package_group"],
 )
-
-toolchain_type(name = "toolchain_type")
 
 cfg6_eac_argument(
     name = "false",

@@ -1,7 +1,7 @@
-load("@rules_java//java:defs.bzl", "java_binary")
-load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+"""Rules for SaC steps on a dvcfg6 project."""
 
-_dbg_script_postfix = "_dbg_script"
+load("@rules_java//java:defs.bzl", "java_binary")
+load("//private:script_action.bzl", "make_script_action")
 
 def _script_jar_impl(pai_version, script_classes, **kwargs):
     java_binary(
@@ -25,8 +25,18 @@ script_jar = macro(
     implementation = _script_jar_impl,
 )
 
-def _sac_dbg_script_impl(ctx):
-    command = '''
+def _sac_dbg_command_builder(ctx):
+    toolchain = ctx.toolchains[TOOLCHAIN_TYPE].cfg6
+    script_task = ctx.attr.task[ScriptTaskInfo]
+
+    inputs = [ctx.file.input, script_task.script]
+    if ctx.file.evs:
+        inputs.append(ctx.file.evs)
+    transitive_inputs = []
+    if toolchain.files:
+        transitive_inputs.append(toolchain.files)
+
+    script = '''
 if [[ "${{EAC_DEBUG-}}" == "true" ]]; then
     export DVCFG_JVM_ARGS='-agentlib:jdwp=transport=dt_socket,server=y,suspend=n -Djdk.attach.allowAttachSelf=true'
     export IDE_INTEGRATION_PORT="${{EAC_IDE_PORT-}}"
@@ -37,32 +47,32 @@ _term() {{
 }}
 trap _term SIGINT
 
-"{xpro}" run-script -i "{input}" ''' + ('-e "{evs}" ' if ctx.attr.evs else "") + '''-l "{jar}" -t "{task}" "$BUILD_WORKSPACE_DIRECTORY/{pkg}/{name}.arxml" &
+"{xpro}" run-script -i "{input}" {evs_arg} -l "{jar}" -t "{task}" "$BUILD_WORKSPACE_DIRECTORY/{pkg}/{name}.arxml" &
 
 child=$!
 wait "$child"
-'''
-    return _write_script(
-        ctx,
-        command,
-        {
-            "input": ctx.attr.input,
-            "evs": ctx.attr.evs,
-            "jar": ctx.attr.task,
-        },
-        xpro = ctx.toolchains[TOOLCHAIN_TYPE].cfg6.xpro,
-        task = ctx.attr.task[ScriptTaskInfo].task_name,
+'''.format(
+        xpro = getattr(toolchain.xpro_exe, "short_path", toolchain.xpro_exe),
+        input = ctx.file.input.short_path,
+        jar = script_task.script.short_path,
+        task = script_task.task_name,
         pkg = ctx.label.package,
-        name = ctx.label.name[:-len(_dbg_script_postfix)],
+        name = ctx.label.name.removeprefix("_script"),
+        evs_arg = '-e "{evs}" '.format(ctx.file.evs.short_path) if ctx.attr.evs else "",
+    )
+    return struct(
+        script = script,
+        inputs = depset(inputs, transitive = transitive_inputs).to_list(),
     )
 
-_sac_dbg_script = rule(
+# buildifier: disable=unused-variable
+_sac_dbg_script, _sac_dbg = make_script_action(
     attrs = {
         "input": attr.label(doc = "The .arxml file to patch.", allow_single_file = [".arxml"], default = Label("empty.arxml")),
         "evs": attr.label_list(doc = "The .arxml files containing the EvaluatedVariantSet (required for variant input only).", allow_files = [".arxml"]),
         "task": attr.label_list(doc = "The task to execute (see [script_task](#script_task)).", providers = [ScriptTaskInfo], allow_empty = False, mandatory = True),
     },
-    implementation = _sac_dbg_script_impl,
+    command_builder = _sac_dbg_command_builder,
     toolchains = [TOOLCHAIN_TYPE],
 )
 
@@ -86,17 +96,11 @@ def _sac_impl(name, code, script_classes, task_name, pai_version, evs, input, **
         tasks = [script_task_name],
         **kwargs
     )
-    dbg_script_name = name + _dbg_script_postfix
-    _sac_dbg_script(
-        name = dbg_script_name,
+    _sac_dbg(
+        name = name + "_dbg",
         task = script_task_name,
         input = input,
         evs = evs,
-    )
-    sh_binary(
-        name = name + "_dbg",
-        srcs = [dbg_script_name],
-        use_bash_launcher = True,
     )
 
 cfg6_sac = macro(

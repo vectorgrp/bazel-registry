@@ -1,3 +1,5 @@
+"""Internal utils / helpers"""
+
 def single_file_from_target(target):
     files = target[DefaultInfo].files.to_list()
     if len(files) != 1:

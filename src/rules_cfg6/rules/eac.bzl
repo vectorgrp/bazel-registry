@@ -1,6 +1,6 @@
 """Rules for applying EaC jars on a dvcfg6 project."""
 
-load("//:private/project_transform.bzl", "cfg6_project_transform_rule")
+load("//private:project_transform.bzl", "cfg6_project_transform_rule")
 
 AsCodeTypeInfo = provider("Instance of EaC jar with arguments", fields = ["type", "jar", "arg"])
 
