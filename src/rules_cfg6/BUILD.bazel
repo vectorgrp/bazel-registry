@@ -1,3 +1,5 @@
+load("@bazel_skylib//rules:common_settings.bzl", "string_flag")
+load("//private:remote_caching.bzl", "remote_caching_setting")
 load("//rules:eac.bzl", "cfg6_eac_argument")
 
 package(default_visibility = ["//visibility:public"])
@@ -16,4 +18,14 @@ cfg6_eac_argument(
 cfg6_eac_argument(
     name = "true",
     value = "true",
+)
+
+remote_caching_setting(
+    name = "remote_cache",
+    build_setting_default = "",
+)
+
+string_flag(
+    name = "extra_jvm_args",
+    build_setting_default = "",
 )

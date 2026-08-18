@@ -1,10 +1,12 @@
 """Rule builder for dvcfg6 code generation rules."""
 
+load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load("//private:project_provider.bzl", "Cfg6ProjectInfo", "UPSTREAM_ATTR", "get_bsw_pkg_root", "get_project_root")
 load("//toolchain:defs.bzl", "TOOLCHAIN_TYPE")
+load(":remote_caching.bzl", "RemoteCacheInfo")
 
 _PROJECT_GENERATE_LAUNCHER_SCRIPT = """
-set -euo pipefail
+set -eo pipefail
 
 dvcfg_exe="$(realpath $1)"
 project_dir="$2"
@@ -30,6 +32,12 @@ else
     export OS=Windows # Required for tresos
 fi
 
+if [[ ! -z "$DVCFG_CACHE_CONFIG_LOCATION" ]]; then
+    # copy to tmp location as cfg6 is not able to dereference symlinks
+    cp -LRTf "$DVCFG_CACHE_CONFIG_LOCATION" "$tmp_dir/cache"
+    export DVCFG_CACHE_CONFIG_LOCATION="$tmp_dir/cache"
+fi
+
 # Create fake home/appdata directory
 fakehome="$tmp_dir/fakehome"
 mkdir "$fakehome"
@@ -37,8 +45,8 @@ export USER=nobody
 export HOME="$fakehome"
 export LOCALAPPDATA="$fakehome"
 export APPDATA="$fakehome"
-export DVCFG_JVM_ARGS="-Duser.home=$fakehome"
-export JAVA_OPTS="-Duser.home=$fakehome"
+export DVCFG_JVM_ARGS="-Duser.home=$fakehome $EXTRA_JVM_ARGS"
+export JAVA_OPTS="-Duser.home=$fakehome $EXTRA_JVM_ARGS"
 
 trap "\\"$dvcfg_exe\\" stop -p \\"$tmp_project_dir\\" || true" EXIT
 "$dvcfg_exe" $command -p "$tmp_project_dir" -b "$tmp_bsw_pkg_dir" --no-save $@
@@ -68,16 +76,28 @@ def cfg6_generation_rule(command_builder, attrs = {}, **kwargs):
 
         command = command_builder(ctx)
 
+        env = {}
         args = ctx.actions.args().add(toolchain.cli_exe).add(project_in_root_dir).add(bsw_pkg_root_dir).add(command.command).add(ctx.attr.gendata_base).add(intermediate_output_dir.path)
 
         inputs = [project_in.project_files, project_in.bsw_pkg_files]
         if toolchain.files:
             inputs.append(toolchain.files)
+
+        remote_cache_info = ctx.attr._remote_cache[RemoteCacheInfo]
+        if remote_cache_info.enabled:
+            # We need to provide the directory instead of the actual config file
+            env["DVCFG_CACHE_CONFIG_LOCATION"] = remote_cache_info.config_file.path.rpartition("/")[0]
+            inputs.append(depset([remote_cache_info.config_file]))
+
+        if ctx.attr._extra_jvm_args:
+            env["EXTRA_JVM_ARGS"] = ctx.attr._extra_jvm_args[BuildSettingInfo].value
+
         ctx.actions.run_shell(
             command = _PROJECT_GENERATE_LAUNCHER_SCRIPT,
             arguments = [args, command.args],
-            outputs = [intermediate_output_dir],
+            env = env,
             inputs = depset(transitive = inputs),
+            outputs = [intermediate_output_dir],
             toolchain = TOOLCHAIN_TYPE,
             mnemonic = "DaVinciCfg6",
         )
@@ -107,6 +127,8 @@ def cfg6_generation_rule(command_builder, attrs = {}, **kwargs):
             UPSTREAM_ATTR,
             gendata_base = attr.string(mandatory = True, doc = "Directory where dvcfg6 writes generate files to. Relative to dv project root."),
             output_files = attr.output_list(mandatory = False),
+            _remote_cache = attr.label(providers = [RemoteCacheInfo], default = Label("//:remote_cache")),
+            _extra_jvm_args = attr.label(providers = [BuildSettingInfo], default = Label("//:extra_jvm_args")),
             **attrs
         ),
         toolchains = [TOOLCHAIN_TYPE],

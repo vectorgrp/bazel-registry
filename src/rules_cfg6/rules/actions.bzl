@@ -31,7 +31,7 @@ def _open_project_command_builder(ctx, editable):
 
     return struct(
         script = script,
-        inputs = depset(transitive=transitive_inputs).to_list(),
+        inputs = depset(transitive = transitive_inputs).to_list(),
     )
 
 # buildifier: disable=unused-variable
