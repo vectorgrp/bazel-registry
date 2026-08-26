@@ -4,11 +4,11 @@ package(default_visibility = ["//visibility:public"])
 
 dvarjson_toolchain(
     name = "dvarjson",
-    cli = "CLI"
+    cli = "CLI",
 )
 
 toolchain(
-    name ="toolchain",
+    name = "toolchain",
     toolchain = ":dvarjson",
-    toolchain_type = "@rules_dvarjson//:toolchain_type"
+    toolchain_type = "@rules_dvarjson//:toolchain_type",
 )

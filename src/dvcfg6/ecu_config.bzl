@@ -15,7 +15,7 @@ ecu_config = module_extension(
             doc = """Creates a DaVinci project repo for configuring an ECU and generating the BSW code.
 
 Import the repo with `use_repo(ecu_config, "MyProject")`.""",
-            attrs = { k: v for k, v in ECU_CONFIG_ATTRS.items() if k != "cfg6_defs" }
-        )
-    }
+            attrs = {k: v for k, v in ECU_CONFIG_ATTRS.items() if k != "cfg6_defs"},
+        ),
+    },
 )

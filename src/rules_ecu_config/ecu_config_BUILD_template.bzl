@@ -1,7 +1,7 @@
-load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+load("@rules_cfg6//:defs.bzl", "apply_bswmd", "as_code", "derive_ecuc", "downstream_project", "import_diag_modules", "import_evs", "import_modules", "update_project")
+load("@rules_dvarjson//:defs.bzl", "ddm", "ddm_json", "evs")
 load("@rules_ecu_config//:defs.bzl", "dbg_as_code_script")
-load("@rules_cfg6//:defs.bzl", "import_evs", "derive_ecuc", "import_modules", "import_diag_modules", "update_project", "as_code", "downstream_project", "apply_bswmd")
-load("@rules_dvarjson//:defs.bzl", "evs", "ddm", "ddm_json")
+load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 load(":defs.bzl", "as_code_jars", "edit_project")
 
 package(default_visibility = ["//visibility:public"])
@@ -12,12 +12,12 @@ dbg_as_code_script(
     name = "spawn_dev_cfg6_script",
     bsw_pkg = "BSW",
     dvjson = "DVJSON",
-    visibility = ["//visibility:private"]
+    visibility = ["//visibility:private"],
 )
 
 sh_binary(
     name = "spawn_dev_cfg6",
-    srcs = [":spawn_dev_cfg6_script"]
+    srcs = [":spawn_dev_cfg6_script"],
 )
 
 IMPORT_EVS
@@ -36,5 +36,5 @@ downstream_project(
 )
 
 edit_project(
-    name = "edit_project"
+    name = "edit_project",
 )

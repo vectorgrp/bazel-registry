@@ -5,7 +5,7 @@ load("CFG6_DEFS", "script_jar")
 
 as_code_jars = AS_CODE_JARS
 
-_PROJECT_NAME = (lambda name : "@" + name[name.rfind("+") + 1:])(str(Label("project"))[1:])
+_PROJECT_NAME = (lambda name: "@" + name[name.rfind("+") + 1:])(str(Label("project"))[1:])
 
 def _dbg_target(name, jars):
     script_name = name + "_dbg_script"
@@ -15,14 +15,14 @@ def _dbg_target(name, jars):
         jars = jars,
         bsw_pkg = "BSW",
         dvjson = "DVJSON",
-        upstream = [Label("as_code_upstream"), Label("spawn_dev_cfg6")]
+        upstream = [Label("as_code_upstream"), Label("spawn_dev_cfg6")],
     )
     sh_binary(
         name = name + "_dbg",
         tags = ["application"],
         srcs = [native.package_relative_label(script_name)],
         use_bash_launcher = True,
-        visibility = ["//visibility:public"]
+        visibility = ["//visibility:public"],
     )
 
 def _eac_jar_impl(name, plugins, arg, tags, **kwargs):
@@ -38,7 +38,7 @@ def _eac_jar_impl(name, plugins, arg, tags, **kwargs):
         name = name,
         jar = native.package_relative_label(jar_name + "_deploy.jar"),
         arg = arg,
-        visibility = ["//visibility:public"]
+        visibility = ["//visibility:public"],
     )
     canonical_name = str(native.package_relative_label(name))
     jars = []
@@ -47,6 +47,7 @@ def _eac_jar_impl(name, plugins, arg, tags, **kwargs):
         if jar == canonical_name:
             _dbg_target(name, jars)
             return
+
     # the jar is not for production but a utility jar so we generate a standalone debub target
     _dbg_target(name, [canonical_name])
 
@@ -65,9 +66,9 @@ eac_jar = macro(
         "tags": attr.string_list(doc = "[Inherited rule attribute](https://bazel.build/reference/be/common-definitions#common.tags)", configurable = False),
         "arg": attr.label(doc = '''Optional argument. Use rule `load("@rules_cfg6//:defs.bazl", "as_code_arg")` to define the argument.
 
-For deserializing the argument a dependency to Gson is required. `@dvcfg6//:gson` can be used for this.''')
+For deserializing the argument a dependency to Gson is required. `@dvcfg6//:gson` can be used for this.'''),
     },
-    implementation = _eac_jar_impl
+    implementation = _eac_jar_impl,
 )
 
 def _edit_project_impl(**kwargs):
@@ -84,9 +85,9 @@ edit_project = macro(
     attrs = {
         "bsw_pkg": None,
         "dvjson": None,
-        "upstream": None
+        "upstream": None,
     },
-    implementation = _edit_project_impl
+    implementation = _edit_project_impl,
 )
 
 def _run_on_project_impl(**kwargs):
@@ -103,9 +104,9 @@ run_on_project = macro(
     attrs = {
         "bsw_pkg": None,
         "dvjson": None,
-        "upstream": None
+        "upstream": None,
     },
-    implementation = _run_on_project_impl
+    implementation = _run_on_project_impl,
 )
 
 def _generate_foundation_layer_impl(bsw_pkg = None, **kwargs):
@@ -120,6 +121,5 @@ generate_foundation_layer = macro(
     attrs = {
         "bsw_pkg": attr.label(doc = "The BSW package folder (defaults to the ECU's BSW package).", allow_single_file = True),
     },
-    implementation = _generate_foundation_layer_impl
+    implementation = _generate_foundation_layer_impl,
 )
-

@@ -16,8 +16,8 @@ def module_build_props(version):
 
 ```starlark
 bazep_dep(name = "{name}", version = "{version}")
-```""".format(header = _STARDOC_HEADER, name = name, version = version)
-        }
+```""".format(header = _STARDOC_HEADER, name = name, version = version),
+        },
     )
 
 def _versioned_module_bazel_impl(ctx):
@@ -25,16 +25,16 @@ def _versioned_module_bazel_impl(ctx):
     ctx.actions.expand_template(
         template = ctx.file.module_bazel,
         output = target,
-        substitutions = ctx.attr.substitutions
+        substitutions = ctx.attr.substitutions,
     )
     return [DefaultInfo(files = depset([target]))]
 
 versioned_module_bazel = rule(
     attrs = {
         "module_bazel": attr.label(allow_single_file = ["MODULE.bazel"], mandatory = True),
-        "substitutions": attr.string_dict(mandatory = True)
+        "substitutions": attr.string_dict(mandatory = True),
     },
-    implementation = _versioned_module_bazel_impl
+    implementation = _versioned_module_bazel_impl,
 )
 
 def _append_files_impl(srcs, out, **kwargs):
@@ -42,7 +42,7 @@ def _append_files_impl(srcs, out, **kwargs):
         srcs = srcs,
         outs = [out],
         cmd = 'cat "$(location {})" > "$@"'.format(
-            ')" "$(location '.join([str(src) for src in srcs])
+            ')" "$(location '.join([str(src) for src in srcs]),
         ),
         **kwargs
     )
@@ -50,9 +50,9 @@ def _append_files_impl(srcs, out, **kwargs):
 append_files = macro(
     attrs = {
         "srcs": attr.label_list(allow_files = True, mandatory = True, allow_empty = False, configurable = False),
-        "out": attr.string(mandatory = True, configurable = False)
+        "out": attr.string(mandatory = True, configurable = False),
     },
-    implementation = _append_files_impl
+    implementation = _append_files_impl,
 )
 
 def _expand_target(ctx, target):
@@ -74,8 +74,8 @@ fi
             folder = "$BUILD_WORKSPACE_DIRECTORY/modules/" + name + "/" + ctx.attr.version,
             module_bazel = _expand_target(ctx, ctx.attr.module_bazel),
             source_json = _expand_target(ctx, ctx.attr.source_json),
-            readme = _expand_target(ctx, ctx.attr.readme)
-        )
+            readme = _expand_target(ctx, ctx.attr.readme),
+        ),
     )
     return [DefaultInfo(executable = out, runfiles = ctx.runfiles(files = [ctx.file.module_bazel, ctx.file.source_json, ctx.file.readme]))]
 
@@ -84,9 +84,9 @@ build_module_script = rule(
         "module_bazel": attr.label(allow_single_file = ["MODULE.bazel"], mandatory = True),
         "source_json": attr.label(allow_single_file = ["source.json"], mandatory = True),
         "readme": attr.label(allow_single_file = ["README.md"], mandatory = True),
-        "version": attr.string(mandatory = True)
+        "version": attr.string(mandatory = True),
     },
-    implementation = _build_module_script_impl
+    implementation = _build_module_script_impl,
 )
 
 def _build_module_impl(name, version, readme, **kwargs):
@@ -98,13 +98,13 @@ def _build_module_impl(name, version, readme, **kwargs):
     versioned_module_bazel(
         name = module_bazel_name,
         module_bazel = module_bazel_label,
-        substitutions = { 'module(name = "' + name: 'module(name = "{}", version = "{}'.format(name, version) }
+        substitutions = {'module(name = "' + name: 'module(name = "{}", version = "{}'.format(name, version)},
     )
     pkg_zip_name = name + "_pkg_zip"
     pkg_zip(
         name = pkg_zip_name,
         srcs = [module_bazel_label.same_package_label("srcs")],
-        out = zip_name
+        out = zip_name,
     )
     source_json_name = name + "_source_json"
     native.genrule(
@@ -123,7 +123,7 @@ printf '{"url":"https://github.com/vectorgrp/bazel-regristry/releases/download/%
         source_json = source_json_name,
         readme = readme,
         version = version,
-        tags = ["no-ide"]
+        tags = ["no-ide"],
     )
     sh_binary(
         name = name + "_build",
@@ -135,9 +135,9 @@ printf '{"url":"https://github.com/vectorgrp/bazel-regristry/releases/download/%
 build_module = macro(
     attrs = {
         "version": attr.string(mandatory = True, configurable = False),
-        "readme": attr.label(allow_single_file = ["README.md"], mandatory = True)
+        "readme": attr.label(allow_single_file = ["README.md"], mandatory = True),
     },
-    implementation = _build_module_impl
+    implementation = _build_module_impl,
 )
 
 def _build_all_modules_script_impl(ctx):
@@ -145,13 +145,13 @@ def _build_all_modules_script_impl(ctx):
     ctx.actions.write(
         output = out,
         is_executable = True,
-        content = "\n".join([_expand_target(ctx, t) for t in ctx.attr.modules])
+        content = "\n".join([_expand_target(ctx, t) for t in ctx.attr.modules]),
     )
     return [DefaultInfo(executable = out, runfiles = ctx.runfiles(files = ctx.files.modules).merge_all([m[DefaultInfo].default_runfiles for m in ctx.attr.modules]))]
 
 build_all_modules_script = rule(
     attrs = {
-        "modules": attr.label_list()
+        "modules": attr.label_list(),
     },
-    implementation = _build_all_modules_script_impl
+    implementation = _build_all_modules_script_impl,
 )
