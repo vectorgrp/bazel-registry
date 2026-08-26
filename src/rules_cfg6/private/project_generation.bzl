@@ -41,10 +41,12 @@ fi
 # Create fake home/appdata directory
 fakehome="$tmp_dir/fakehome"
 mkdir "$fakehome"
+export TMPDIR="$tmp_dir"
 export USER=nobody
 export HOME="$fakehome"
 export LOCALAPPDATA="$fakehome"
 export APPDATA="$fakehome"
+export DVCFG_REGISTRY_LOCATION="$tmpdir"
 export DVCFG_JVM_ARGS="-Duser.home=$fakehome $EXTRA_JVM_ARGS"
 export JAVA_OPTS="-Duser.home=$fakehome $EXTRA_JVM_ARGS"
 
