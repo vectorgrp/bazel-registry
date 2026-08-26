@@ -108,9 +108,12 @@ run_on_project = macro(
     implementation = _run_on_project_impl
 )
 
-def _generate_foundation_layer_impl(bsw_pkg = None, **kwargs):
+def _generate_foundation_layer_impl(bsw_pkg = None, output = None, **kwargs):
+    if not output:
+        fail("The foundation layer output target must be specified.")
     _generate_foundation_layer(
         bsw_pkg = bsw_pkg if bsw_pkg else "FOUNDATION_LAYER_PKG",
+        output = output,
         **kwargs
     )
 
@@ -119,7 +122,7 @@ generate_foundation_layer = macro(
     inherit_attrs = _generate_foundation_layer,
     attrs = {
         "bsw_pkg": attr.label(doc = "The BSW package folder (defaults to the ECU's BSW package).", allow_single_file = True),
+        "output": attr.label(doc = "The destination folder for generated sources.", allow_single_file = True),
     },
     implementation = _generate_foundation_layer_impl
 )
-

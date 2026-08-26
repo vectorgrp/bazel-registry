@@ -712,7 +712,7 @@ Rule for generating the foundation layer API sources.
 | <a id="generate_foundation_layer-exec_properties"></a>exec_properties |  <a href="https://bazel.build/reference/be/common-definitions#common.exec_properties">Inherited rule attribute</a>   | <a href="https://bazel.build/rules/lib/core/dict">Dictionary: String -> String</a> | optional |  `None`  |
 | <a id="generate_foundation_layer-features"></a>features |  <a href="https://bazel.build/reference/be/common-definitions#common.features">Inherited rule attribute</a>   | List of strings | optional |  `None`  |
 | <a id="generate_foundation_layer-filter"></a>filter |  Optional filter file containing the definition-references of all modules to be generated, separated by newlines. If this is not provided all modules of the BSW package are generated.   | <a href="https://bazel.build/concepts/labels">Label</a> | optional |  `None`  |
-| <a id="generate_foundation_layer-output"></a>output |  The output folder.   | <a href="https://bazel.build/concepts/labels">Label</a> | required |  |
+| <a id="generate_foundation_layer-output"></a>output |  The destination folder for generated sources.   | <a href="https://bazel.build/concepts/labels">Label</a> | required |  |
 | <a id="generate_foundation_layer-package_metadata"></a>package_metadata |  <a href="https://bazel.build/reference/be/common-definitions#common.package_metadata">Inherited rule attribute</a>   | <a href="https://bazel.build/concepts/labels">List of labels</a>; <a href="https://bazel.build/reference/be/common-definitions#configurable-attributes">nonconfigurable</a> | optional |  `None`  |
 | <a id="generate_foundation_layer-restricted_to"></a>restricted_to |  <a href="https://bazel.build/reference/be/common-definitions#common.restricted_to">Inherited rule attribute</a>   | <a href="https://bazel.build/concepts/labels">List of labels</a>; <a href="https://bazel.build/reference/be/common-definitions#configurable-attributes">nonconfigurable</a> | optional |  `None`  |
 | <a id="generate_foundation_layer-tags"></a>tags |  <a href="https://bazel.build/reference/be/common-definitions#common.tags">Inherited rule attribute</a>   | List of strings; <a href="https://bazel.build/reference/be/common-definitions#configurable-attributes">nonconfigurable</a> | optional |  `None`  |
@@ -968,5 +968,4 @@ Rule for using a local DaVinci Configurator Classic Version 6 installation.
 | :------------- | :------------- | :------------- | :------------- | :------------- |
 | <a id="local_cfg6-name"></a>name |  A unique name for this repository.   | <a href="https://bazel.build/concepts/labels#target-names">Name</a> | required |  |
 | <a id="local_cfg6-path"></a>path |  Path (absolute or relative to workspace root) of the dvcfg install folder.   | String | required |  |
-
 

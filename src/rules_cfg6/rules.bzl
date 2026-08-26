@@ -194,16 +194,16 @@ def _write_script(ctx, command, targets_dict, **kwargs):
 
 def _generate_foundation_layer_script_impl(ctx):
     includelist, substitution = (' --includelist "{filter}"', { "filter": ctx.attr.filter }) if ctx.attr.filter else ("", {})
-    return _write_script(ctx, '"{core}" -application com.vector.cfg.bswmdmgen.app.flApplication -b "{bsw_pkg}" --force -o "$BUILD_WORKSPACE_DIRECTORY/{folder}"' + includelist,
+    return _write_script(ctx, '"{core}" -application com.vector.cfg.bswmdmgen.app.flApplication -b "{bsw_pkg}" --force -o "{output}"' + includelist,
         { "bsw_pkg": ctx.attr.bsw_pkg } | substitution,
         core = ctx.toolchains[":toolchain_type"].cfg6.core,
-        folder = ctx.file.output.short_path
+        output = _rlocation(ctx, ctx.attr.output)
     )
 
 generate_foundation_layer_script = rule(
     attrs = {
         "bsw_pkg": attr.label(doc = "The BSW package folder.", allow_single_file = True, mandatory = True),
-        "output": attr.label(doc = "The output folder.", allow_single_file = True, mandatory = True),
+        "output": attr.label(doc = "The destination folder for generated sources.", allow_single_file = True, mandatory = True),
         "filter": attr.label(doc = "Optional filter file containing the definition-references of all modules to be generated, separated by newlines. If this is not provided all modules of the BSW package are generated.", allow_single_file = True)
     },
     implementation = _generate_foundation_layer_script_impl,
