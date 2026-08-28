@@ -1,5 +1,6 @@
 export DVCFG_JVM_ARGS='-agentlib:jdwp=transport=dt_socket,server=y,suspend=n -Djdk.attach.allowAttachSelf=true'
 export DVCFG_TIMEOUT=-1
+export DVCFG_BUILD_SYSTEM_PATH="$BUILD_WORKSPACE_DIRECTORY"
 IDE_INTEGRATION=" --ide-integration-port ${EAC_IDE_PORT--2 --no-undo}"
 if [[ "${EAC_DEBUG-}" == "true" ]]; then
     IDE_INTEGRATION+=" --debug"

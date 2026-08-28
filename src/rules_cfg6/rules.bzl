@@ -231,13 +231,13 @@ generate_foundation_layer = macro(
     implementation = _generate_foundation_layer_impl
 )
 
-def _script_jar_impl(pai_version, script_classes, **kwargs):
+def _script_jar_impl(pai_version, script_classes, allow_beta, **kwargs):
     java_binary(
         main_class = "com.vector.cfg.WorkaroundForMissinFatJarTarget",
         deploy_manifest_lines = [
             "DvCfg-AutomationInterfaceJars-Compile-Version: " + pai_version,
             "Automation-Classes: " + ",".join(script_classes),
-            "DvCfg-AutomationInterface-AllowBetaApiUsage: true"
+            "DvCfg-AutomationInterface-AllowBetaApiUsage: " + ("true" if allow_beta else "false")
         ],
         **kwargs
     )
@@ -247,7 +247,8 @@ script_jar = macro(
     attrs = dict({ k: v for k, v in JAVA_LIBRARY_ATTRS.items() if not k.startswith("_") and k in BASIC_JAVA_BINARY_ATTRIBUTES },
         pai_version = attr.string(mandatory = True, configurable = False),
         script_classes = attr.string_list(doc = "ScriptFactory class names.", mandatory = True, allow_empty = False, configurable = False),
-        tags = attr.string_list(doc = "[Inherited rule attribute](https://bazel.build/reference/be/common-definitions#common.tags)", configurable = False)
+        tags = attr.string_list(doc = "[Inherited rule attribute](https://bazel.build/reference/be/common-definitions#common.tags)", configurable = False),
+        allow_beta = attr.bool(doc = "Whether to allow usage of beta PAI APIs.", configurable = False)
     ),
     implementation = _script_jar_impl
 )
