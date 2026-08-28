@@ -1,4 +1,4 @@
-load("@rules_java//java:defs.bzl", "java_import", "java_plugin")
+load("@rules_java//java:defs.bzl", "java_import", "java_plugin", "java_library")
 load("@rules_cfg6//:defs.bzl", "cfg6_toolchain")
 
 package(default_visibility = ["//visibility:public"])
