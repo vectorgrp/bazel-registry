@@ -122,4 +122,3 @@ generate_foundation_layer = macro(
     },
     implementation = _generate_foundation_layer_impl
 )
-
