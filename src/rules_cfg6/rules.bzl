@@ -308,13 +308,18 @@ import_evs = rule(
 )
 
 def _derive_ecuc_impl(ctx):
-    return _cli_cmd(ctx, ctx.files.extract, 'project derive-ecuc -b "{bsw}" -p "{dvjson}" --force "{extract}"',
-        extract = '" "'.join([extract.path for extract in ctx.files.extract])
+    input_files = ctx.files.extract + ctx.files.evs
+    return _cli_cmd(ctx, input_files, 'project derive-ecuc -b "{bsw}" -p "{dvjson}" --force "{inputs}"',
+        inputs = ",".join([file.path for file in input_files])
     )
 
 derive_ecuc = rule(
     doc = "Internal rule for adding an ECU extract to the DaVinci project.",
-    attrs = dict(_STD_CLI_ATTRS, extract = attr.label_list(doc = "The .arxml files containing the ECU extract.", allow_files = [".arxml"], allow_empty = False, mandatory = True)),
+    attrs = dict(
+        _STD_CLI_ATTRS,
+        extract = attr.label_list(doc = "The .arxml files containing the ECU extract.", allow_files = [".arxml"], allow_empty = False, mandatory = True),
+        evs = attr.label_list(doc = "The .arxml files containing the EvaluatedVariantSet (required for variant input only).", allow_files = [".arxml"]),
+    ),
     implementation = _derive_ecuc_impl,
     toolchains = [":toolchain_type"]
 )
