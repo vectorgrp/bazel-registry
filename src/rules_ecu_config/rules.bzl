@@ -131,15 +131,13 @@ def _apply_bswmd_substitution(repository_ctx, bsw_pkg, dvjson, upstream):
 def _derive_ecuc_substitution(repository_ctx, bsw_pkg, dvjson, upstream):
     return ("derive_ecuc", """derive_ecuc(
     name = "derive_ecuc",
-    extract = [{extract}],
-    evs = [{evs}],
+    srcs = [{srcs}],
     bsw_pkg = "{bsw_pkg}",
     dvjson = "{dvjson}",
     upstream = "{upstream}"
 )
 """.format(
-    extract = ", ".join(['"{}"'.format(label) for label in repository_ctx.attr.extract]),
-    evs = ", ".join(['"{}"'.format(label) for label in repository_ctx.attr.evs]),
+    srcs = ", ".join(['"{}"'.format(label) for label in repository_ctx.attr.extract + repository_ctx.attr.evs]),
     bsw_pkg = bsw_pkg,
     dvjson = dvjson,
     upstream = upstream
