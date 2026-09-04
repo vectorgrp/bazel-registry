@@ -206,7 +206,7 @@
   "moduleExtensions": {
     "//src/rules_ecu_config:ecu_config.bzl%ecu_config": {
       "general": {
-        "bzlTransitiveDigest": "aq24w1f0qipuI9UUHXxUzebwWy0BNHXkjDOadMrK8NQ=",
+        "bzlTransitiveDigest": "81694KUXO+rIeCX1V5N6Logpq2fVapMCgbkhVd5Xni0=",
         "usagesDigest": "amg/eR66UtBdDxS4V33QhAcyZcwQjGrx3g2oz1deHEE=",
         "recordedInputs": [
           "REPO_MAPPING:,cfg6 +cfg6_archive+cfg6",

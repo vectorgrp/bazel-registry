@@ -277,29 +277,21 @@ _STD_CLI_ATTRS = dict(
 )
 
 def _import_evs_impl(ctx):
-    arxml_files = [file for target in ctx.attr.evs for file in target[DefaultInfo].files.to_list()]
-    return _cli_cmd(ctx, arxml_files, 'import evs -b "{bsw}" -p "{dvjson}" "{evs}"',
-        evs = '" "'.join([file.path for file in arxml_files])
-    )
+    return _cli_cmd(ctx, ctx.files.srcs, 'import evs -b "{bsw}" -p "{dvjson}" "{srcs}"', srcs = '" "'.join([file.path for file in ctx.files.srcs]))
 
 import_evs = rule(
     doc = "Internal rule for adding an EvaluatedVariantSet to the DaVinci project.",
-    attrs = dict(_STD_CLI_ATTRS, evs = attr.label_list(doc = "The .arxml files containing the EvaluatedVariantSet.", allow_files = [".arxml"], allow_empty = False, mandatory = True)),
+    attrs = dict(_STD_CLI_ATTRS, srcs = attr.label_list(doc = "The .arxml files containing the EvaluatedVariantSet.", allow_files = [".arxml"], allow_empty = False, mandatory = True)),
     implementation = _import_evs_impl,
     toolchains = [":toolchain_type"]
 )
 
 def _derive_ecuc_impl(ctx):
-    return _cli_cmd(ctx, ctx.files.srcs, 'project derive-ecuc -b "{bsw}" -p "{dvjson}" --force "{inputs}"',
-        inputs = '" "'.join([file.path for file in ctx.files.srcs])
-    )
+    return _cli_cmd(ctx, ctx.files.srcs, 'project derive-ecuc -b "{bsw}" -p "{dvjson}" --force "{srcs}"', srcs = '" "'.join([file.path for file in ctx.files.srcs]))
 
 derive_ecuc = rule(
     doc = "Internal rule for adding an ECU extract to the DaVinci project.",
-    attrs = dict(
-        _STD_CLI_ATTRS,
-        srcs = attr.label_list(doc = "The .arxml files containing the ECU extract and optional EvaluatedVariantSet files.", allow_files = [".arxml"], allow_empty = False, mandatory = True),
-    ),
+    attrs = dict(_STD_CLI_ATTRS, srcs = attr.label_list(doc = "The .arxml files containing the ECU extract and optional EvaluatedVariantSet files.", allow_files = [".arxml"], allow_empty = False, mandatory = True)),
     implementation = _derive_ecuc_impl,
     toolchains = [":toolchain_type"]
 )

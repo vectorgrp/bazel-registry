@@ -161,7 +161,7 @@ cfg6_toolchain(<a href="#cfg6_toolchain-name">name</a>, <a href="#cfg6_toolchain
 <pre>
 load("@rules_cfg6//:defs.bzl", "derive_ecuc")
 
-derive_ecuc(<a href="#derive_ecuc-name">name</a>, <a href="#derive_ecuc-bsw_pkg">bsw_pkg</a>, <a href="#derive_ecuc-dvjson">dvjson</a>, <a href="#derive_ecuc-extract">extract</a>, <a href="#derive_ecuc-upstream">upstream</a>)
+derive_ecuc(<a href="#derive_ecuc-name">name</a>, <a href="#derive_ecuc-srcs">srcs</a>, <a href="#derive_ecuc-bsw_pkg">bsw_pkg</a>, <a href="#derive_ecuc-dvjson">dvjson</a>, <a href="#derive_ecuc-upstream">upstream</a>)
 </pre>
 
 Internal rule for adding an ECU extract to the DaVinci project.
@@ -172,9 +172,9 @@ Internal rule for adding an ECU extract to the DaVinci project.
 | Name  | Description | Type | Mandatory | Default |
 | :------------- | :------------- | :------------- | :------------- | :------------- |
 | <a id="derive_ecuc-name"></a>name |  A unique name for this target.   | <a href="https://bazel.build/concepts/labels#target-names">Name</a> | required |  |
+| <a id="derive_ecuc-srcs"></a>srcs |  The .arxml files containing the ECU extract and optional EvaluatedVariantSet files.   | <a href="https://bazel.build/concepts/labels">List of labels</a> | required |  |
 | <a id="derive_ecuc-bsw_pkg"></a>bsw_pkg |  The BSW package folder.   | String | required |  |
 | <a id="derive_ecuc-dvjson"></a>dvjson |  The .dvjson file.   | String | required |  |
-| <a id="derive_ecuc-extract"></a>extract |  The .arxml files containing the ECU extract.   | <a href="https://bazel.build/concepts/labels">List of labels</a> | required |  |
 | <a id="derive_ecuc-upstream"></a>upstream |  The upstream pipeline target.   | <a href="https://bazel.build/concepts/labels">Label</a> | required |  |
 
 
@@ -313,7 +313,7 @@ Rule for importing diagnostic module configurations into the DaVinci project.
 <pre>
 load("@rules_cfg6//:defs.bzl", "import_evs")
 
-import_evs(<a href="#import_evs-name">name</a>, <a href="#import_evs-bsw_pkg">bsw_pkg</a>, <a href="#import_evs-dvjson">dvjson</a>, <a href="#import_evs-evs">evs</a>, <a href="#import_evs-upstream">upstream</a>)
+import_evs(<a href="#import_evs-name">name</a>, <a href="#import_evs-srcs">srcs</a>, <a href="#import_evs-bsw_pkg">bsw_pkg</a>, <a href="#import_evs-dvjson">dvjson</a>, <a href="#import_evs-upstream">upstream</a>)
 </pre>
 
 Internal rule for adding an EvaluatedVariantSet to the DaVinci project.
@@ -324,9 +324,9 @@ Internal rule for adding an EvaluatedVariantSet to the DaVinci project.
 | Name  | Description | Type | Mandatory | Default |
 | :------------- | :------------- | :------------- | :------------- | :------------- |
 | <a id="import_evs-name"></a>name |  A unique name for this target.   | <a href="https://bazel.build/concepts/labels#target-names">Name</a> | required |  |
+| <a id="import_evs-srcs"></a>srcs |  The .arxml files containing the EvaluatedVariantSet.   | <a href="https://bazel.build/concepts/labels">List of labels</a> | required |  |
 | <a id="import_evs-bsw_pkg"></a>bsw_pkg |  The BSW package folder.   | String | required |  |
 | <a id="import_evs-dvjson"></a>dvjson |  The .dvjson file.   | String | required |  |
-| <a id="import_evs-evs"></a>evs |  The .arxml files containing the EvaluatedVariantSet.   | <a href="https://bazel.build/concepts/labels">List of labels</a> | required |  |
 | <a id="import_evs-upstream"></a>upstream |  The upstream pipeline target.   | <a href="https://bazel.build/concepts/labels">Label</a> | required |  |
 
 
