@@ -291,7 +291,7 @@ import_evs = rule(
 
 def _derive_ecuc_impl(ctx):
     return _cli_cmd(ctx, ctx.files.srcs, 'project derive-ecuc -b "{bsw}" -p "{dvjson}" --force "{inputs}"',
-        inputs = ",".join([file.path for file in ctx.files.srcs])
+        inputs = '" "'.join([file.path for file in ctx.files.srcs])
     )
 
 derive_ecuc = rule(
