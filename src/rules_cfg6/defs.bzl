@@ -8,7 +8,6 @@ load(":rules.bzl",
     _cfg6_toolchain = "cfg6_toolchain",
     _generate_foundation_layer = "generate_foundation_layer",
     _script_jar = "script_jar",
-    _select_evs = "select_evs",
     _import_evs = "import_evs",
     _derive_ecuc = "derive_ecuc",
     _replace_modules = "replace_modules",
@@ -37,7 +36,10 @@ load(":rules.bzl",
     _run_on_project = "run_on_project",
     _apply_bswmd = "apply_bswmd",
     _dvjson = "dvjson",
-    _sac = "sac"
+    _sac = "sac",
+    _arxml_patch = "arxml_patch",
+    _extract_evs = "extract_evs",
+    _merged_arxml = "merged_arxml"
 )
 
 cfg6_archive = _cfg6_archive
@@ -45,7 +47,6 @@ local_cfg6 = _local_cfg6
 cfg6_toolchain = _cfg6_toolchain
 generate_foundation_layer = _generate_foundation_layer
 script_jar = _script_jar
-select_evs = _select_evs
 import_evs = _import_evs
 derive_ecuc = _derive_ecuc
 replace_modules = _replace_modules
@@ -75,3 +76,6 @@ run_on_project = _run_on_project
 apply_bswmd = _apply_bswmd
 dvjson = _dvjson
 sac = _sac
+arxml_patch = _arxml_patch
+extract_evs = _extract_evs
+merged_arxml = _merged_arxml

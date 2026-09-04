@@ -102,13 +102,13 @@ def _import_evs_substitution(repository_ctx, bsw_pkg, dvjson, upstream):
         arxml_labels = ["evs"]
     substitution += """import_evs(
     name = "import_evs",
-    evs = ["{evs}"],
+    srcs = ["{srcs}"],
     bsw_pkg = "{bsw_pkg}",
     dvjson = "{dvjson}",
     upstream = "{upstream}"
 )
 """.format(
-    evs = '", "'.join([str(label) for label in arxml_labels]),
+    srcs = '", "'.join([str(label) for label in arxml_labels]),
     bsw_pkg = bsw_pkg,
     dvjson = dvjson,
     upstream = upstream

@@ -40,8 +40,6 @@ Cfg6ToolProvider = provider()
 
 ArchiveToolProvider = provider()
 
-EvsShortNamePathProvider = provider()
-
 ModuleImportMergeModeProvider = provider()
 
 VariantNameProvider = provider()
@@ -253,18 +251,6 @@ script_jar = macro(
     implementation = _script_jar_impl
 )
 
-def _select_evs_impl(ctx):
-    return [DefaultInfo(files = depset(ctx.files.arxmls)), EvsShortNamePathProvider(evs_path = ctx.attr.evs_path)]
-
-select_evs = rule(
-    doc = "Rule for selecting one of multiple EvaluatedVariantSets from the given .arxml files.",
-    attrs = {
-        "arxmls": attr.label_list(doc = "The .arxml files containing the EvaluatedVariantSet.", allow_files = [".arxml"], allow_empty = False, mandatory = True),
-        "evs_path": attr.string(doc = "Short name path of the EvaluatedVariantSet.", mandatory = True)
-    },
-    implementation = _select_evs_impl,
-)
-
 def _cli_cmd(ctx, input_files, cmd, **kwargs):
     out = ctx.actions.declare_file(ctx.label.name)
     cfg6 = ctx.toolchains[":toolchain_type"].cfg6
@@ -291,34 +277,21 @@ _STD_CLI_ATTRS = dict(
 )
 
 def _import_evs_impl(ctx):
-    snp = ""
-    snp_provider_targets = [target for target in ctx.attr.evs if EvsShortNamePathProvider in target]
-    if snp_provider_targets:
-        snp = " '-s {}'".format(snp_provider_targets[0][EvsShortNamePathProvider].evs_path)
-    arxml_files = [file for target in ctx.attr.evs for file in target[DefaultInfo].files.to_list()]
-    return _cli_cmd(ctx, arxml_files, 'import evs{snp} -b "{bsw}" -p "{dvjson}" "{evs}"',
-        snp = snp,
-        evs = '","'.join([file.path for file in arxml_files])
-    )
+    return _cli_cmd(ctx, ctx.files.srcs, 'import evs -b "{bsw}" -p "{dvjson}" "{srcs}"', srcs = '" "'.join([file.path for file in ctx.files.srcs]))
 
 import_evs = rule(
     doc = "Internal rule for adding an EvaluatedVariantSet to the DaVinci project.",
-    attrs = dict(_STD_CLI_ATTRS, evs = attr.label_list(doc = "The .arxml files containing the EvaluatedVariantSet.", allow_files = [".arxml"], allow_empty = False, mandatory = True)),
+    attrs = dict(_STD_CLI_ATTRS, srcs = attr.label_list(doc = "The .arxml files containing the EvaluatedVariantSet.", allow_files = [".arxml"], allow_empty = False, mandatory = True)),
     implementation = _import_evs_impl,
     toolchains = [":toolchain_type"]
 )
 
 def _derive_ecuc_impl(ctx):
-    return _cli_cmd(ctx, ctx.files.srcs, 'project derive-ecuc -b "{bsw}" -p "{dvjson}" --force "{inputs}"',
-        inputs = ",".join([file.path for file in ctx.files.srcs])
-    )
+    return _cli_cmd(ctx, ctx.files.srcs, 'project derive-ecuc -b "{bsw}" -p "{dvjson}" --force "{srcs}"', srcs = '" "'.join([file.path for file in ctx.files.srcs]))
 
 derive_ecuc = rule(
     doc = "Internal rule for adding an ECU extract to the DaVinci project.",
-    attrs = dict(
-        _STD_CLI_ATTRS,
-        srcs = attr.label_list(doc = "The .arxml files containing the ECU extract and optional EvaluatedVariantSet files.", allow_files = [".arxml"], allow_empty = False, mandatory = True),
-    ),
+    attrs = dict(_STD_CLI_ATTRS, srcs = attr.label_list(doc = "The .arxml files containing the ECU extract and optional EvaluatedVariantSet files.", allow_files = [".arxml"], allow_empty = False, mandatory = True)),
     implementation = _derive_ecuc_impl,
     toolchains = [":toolchain_type"]
 )
@@ -793,11 +766,11 @@ def _script_patched_arxml_impl(ctx):
     file_args = [single_file_from_target(target) for task in ctx.attr.tasks for target in task[ScriptTaskProvider].file_args.values()]
     ctx.actions.run_shell(
         outputs = [out],
-        inputs =  scripts + file_args + [ctx.file.input] + ctx.files.evs,
-        command = '"{xpro}" run-script -i "{input}"{evs} -l "{scripts}" -t "{tasks}"{args} "{out}"'.format(
+        inputs =  scripts + file_args + ctx.files.srcs,
+        command = '"{xpro}" run-script -i "{src}"{evs} -l "{scripts}" -t "{tasks}"{args} "{out}"'.format(
             xpro = ctx.toolchains[":toolchain_type"].cfg6.xpro,
-            input = ctx.file.input.path,
-            evs =  ' -e "{}"'.format('","'.join([file.path for file in ctx.files.evs])) if ctx.files.evs else "",
+            src = ctx.files.srcs[0].path,
+            evs =  ' -e "{}"'.format('","'.join([file.path for file in ctx.files.srcs[1:]])) if len(ctx.files.srcs) > 1 else "",
             scripts = '","'.join({single_file_from_target(task).path: True for task in ctx.attr.tasks}.keys()),
             tasks = '","'.join([_task_name(task) for task in ctx.attr.tasks]),
             args = _task_args(ctx),
@@ -808,16 +781,116 @@ def _script_patched_arxml_impl(ctx):
     return [DefaultInfo(files = depset([out]))]
 
 _SCRIPT_PATCHED_ARXML_ATTRS = {
-    "input": attr.label(doc = "The .arxml file to patch.", allow_single_file = [".arxml"], default = Label("empty.arxml")),
-    "evs": attr.label_list(doc = "The .arxml files containing the EvaluatedVariantSet (required for variant input only).", allow_files = [".arxml"]),
+    "srcs": attr.label_list(doc = "The .arxml files to be patched.", allow_files = [".arxml"], default = [Label("empty.arxml")]),
     "tasks": attr.label_list(doc = 'The tasks to execute (see [script_task](#script_task)).', providers = [ScriptTaskProvider], allow_empty = False, mandatory = True)
 }
 
 script_patched_arxml = rule(
-    doc = "Rule for patching an .arxml file by applying a script task.",
+    doc = "Rule for patching .arxml file content by applying a script task.",
     attrs = _SCRIPT_PATCHED_ARXML_ATTRS,
     implementation = _script_patched_arxml_impl,
     toolchains = [":toolchain_type"]
+)
+
+def _arxml_patcher_src_impl(ctx):
+    out = ctx.actions.declare_file(ctx.label.name + ".java")
+    ctx.actions.expand_template(
+        template = ctx.file._template,
+        output = out,
+        substitutions = {
+            "ArxmlPatcher": ctx.label.name,
+            "// CALL": ctx.attr.call
+        }
+    )
+    return [DefaultInfo(files = depset([out]))]
+
+_CALL_ATTR = attr.string(doc = "The task call. Must be self-contained (i.e. not requiring any imports). E.g.: call a zero-argument public static void method using a fully qualified class name.", mandatory = True)
+
+arxml_patcher_src = rule(
+    doc = "Internal rule for creating a .java file defining a task to be used in `script_patched_arxml`.",
+    attrs = {
+        "call": _CALL_ATTR,
+        "_template": attr.label(default = Label("ArxmlPatcher.java"), allow_single_file = True)
+    },
+    implementation = _arxml_patcher_src_impl
+)
+
+def _arxml_patch_impl(name, srcs, call, visibility, **kwargs):
+    arxml_patcher_src_name = name + "_arxml_patcher_src"
+    arxml_patcher_src(
+        name = arxml_patcher_src_name,
+        call = call
+    )
+    script_jar_name = name + "_script_jar"
+    script_jar(
+        name = script_jar_name,
+        script_classes = [arxml_patcher_src_name],
+        srcs = srcs + [arxml_patcher_src_name],
+        **kwargs
+    )
+    script_task(
+        name = name,
+        script = script_jar_name + "_deploy.jar",
+        task_name = "patch",
+        visibility = visibility
+    )
+
+arxml_patch = macro(
+    doc = "Internal macro for creating a task to be used in rule `script_patched_arxml`.",
+    inherit_attrs = script_jar,
+    attrs = {
+        "script_classes": None,
+        "srcs": attr.label_list(doc = "[Inherited rule attribute](https://bazel.build/reference/be/java#java_library)", configurable = False),
+        "call": _CALL_ATTR
+    },
+    implementation = _arxml_patch_impl
+)
+
+def _extract_evs_impl(name, pai, pai_version, short_name_path, **kwargs):
+    arxml_patch_name = name + "_arxml_patch"
+    arxml_patch(
+        name = arxml_patch_name,
+        srcs = [Label("EvsExtractor.java")],
+        call = 'EvsExtractor.run("{}")'.format(short_name_path),
+        deps = [pai],
+        pai_version = pai_version
+    )
+    script_patched_arxml(
+        name = name,
+        tasks = [arxml_patch_name],
+        **kwargs
+    )
+
+_PATCHER_MACRO_ATTRS = {
+   "srcs": _SCRIPT_PATCHED_ARXML_ATTRS["srcs"],
+   "pai": attr.label(mandatory = True, configurable = False),
+   "pai_version": attr.string(mandatory = True, configurable = False)
+}
+
+extract_evs = macro(
+    doc = "Internal macro for extracting a single EvaluatedVariantSet from an .arxml file containing multiple EvaluatedVariantSets.",
+    attrs = dict(_PATCHER_MACRO_ATTRS, short_name_path = attr.string(doc = "The short name path of the EvaluatedVariantSet to extract.", mandatory = True, configurable = False)),
+    implementation = _extract_evs_impl
+)
+
+def _merged_arxml_impl(name, pai, pai_version, **kwargs):
+    arxml_patch_name = name + "_no_patch"
+    arxml_patch(
+        name = arxml_patch_name,
+        call = "// JUST MERGE - NO PATCH",
+        deps = [pai],
+        pai_version = pai_version
+    )
+    script_patched_arxml(
+        name = name,
+        tasks = [arxml_patch_name],
+        **kwargs
+    )
+
+merged_arxml = macro(
+    doc = "Internal macro for merging .arxml files.",
+    attrs = _PATCHER_MACRO_ATTRS,
+    implementation = _merged_arxml_impl
 )
 
 def _downstream_project_impl(ctx):
@@ -1176,8 +1249,8 @@ wait "$child"
 '''
     return _write_script(ctx, command,
         {
-            "input": ctx.attr.input,
-            "evs": ctx.attr.evs,
+            "input": ctx.attr.srcs[0],
+            "evs": ctx.attr.srcs[1:],
             "jar": ctx.attr.tasks[0]
         },
         xpro = ctx.toolchains[":toolchain_type"].cfg6.xpro,

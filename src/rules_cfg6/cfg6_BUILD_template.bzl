@@ -78,3 +78,10 @@ java_library(
     name = "pai_beta",
     exports = _pai_common_lib_names + _pai_beta_lib_names
 )
+
+java_library(
+    name = "pai_neverlink",
+    exports = [":pai"],
+    neverlink = True,
+    visibility = ["//visibility:private"]
+)
