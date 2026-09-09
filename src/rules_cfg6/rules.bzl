@@ -251,6 +251,9 @@ script_jar = macro(
     implementation = _script_jar_impl
 )
 
+def _exclusive_label(ctx):
+    return { "DVCFG_EXCLUSIVE_LABEL": str(ctx.label) }
+
 def _cli_cmd(ctx, input_files, cmd, **kwargs):
     out = ctx.actions.declare_file(ctx.label.name)
     cfg6 = ctx.toolchains[":toolchain_type"].cfg6
@@ -264,6 +267,7 @@ def _cli_cmd(ctx, input_files, cmd, **kwargs):
             out = out.path,
             **kwargs
         ),
+        env = _exclusive_label(ctx),
         use_default_shell_env = True
     )
     return [DefaultInfo(files = depset([out]))]
@@ -327,6 +331,7 @@ def _import_modules_impl(ctx):
                     file = file.path,
                     out = out.path
                 ),
+                env = _exclusive_label(ctx),
                 use_default_shell_env = True
             )
             upstream = out
@@ -538,6 +543,7 @@ def _run_export_impl(ctx):
                 split_post = " --split-post-build-variants" if ctx.attr.split_post_build_variants else "",
                 args = (" " + " ".join(ctx.attr.args)) if ctx.attr.args else ""
             )),
+        env = _exclusive_label(ctx),
         use_default_shell_env = True
     )
     return [DefaultInfo(files = depset([out]))]
@@ -564,6 +570,7 @@ def _export_flat_extract_impl(ctx):
                 split_post = " --split-post-build-variants" if ctx.attr.split_post_build_variants else "",
                 args = (" " + " ".join(ctx.attr.args)) if ctx.attr.args else ""
             )),
+        env = _exclusive_label(ctx),
         use_default_shell_env = True
     )
     return [DefaultInfo(files = depset([out]))]
@@ -605,6 +612,7 @@ def _generate_impl(ctx):
                 clean = " --clean-generate" if ctx.attr.skip_up_to_date_checks else "",
                 no_save = " --no-save" if ctx.attr.no_save else ""
             )),
+        env = _exclusive_label(ctx),
         use_default_shell_env = True
     )
     return [DefaultInfo(files = depset([out]))]
@@ -640,6 +648,7 @@ def _generate_swct_impl(ctx):
                 keep_tmp = " --keep-temp-files" if ctx.attr.keep_tmp_files else "",
                 no_save = " --no-save" if ctx.attr.no_save else ""
             )),
+        env = _exclusive_label(ctx),
         use_default_shell_env = True
     )
 
@@ -681,6 +690,7 @@ def _system_extract_impl(ctx):
             ecu = ctx.attr.ecu if ctx.attr.ecu else name,
             out = out.path
         ),
+        env = _exclusive_label(ctx),
         use_default_shell_env = True
     )
     return [DefaultInfo(files = depset([out]))]
@@ -705,6 +715,7 @@ def _merged_extract_impl(ctx):
             input = '" -i "'.join([f.path for f in ctx.files.srcs]),
             out = out.path
         ),
+        env = _exclusive_label(ctx),
         use_default_shell_env = True
     )
     return [DefaultInfo(files = depset([out]))]
@@ -730,6 +741,7 @@ def _variant_extract_impl(ctx):
             extracts = " ".join(['-f {}="{}"'.format(variant, extract[DefaultInfo].files.to_list()[0].path) for extract, variant in ctx.attr.extracts.items()]),
             out = out.path
         ),
+        env = _exclusive_label(ctx),
         use_default_shell_env = True
     )
     return [DefaultInfo(files = depset(ctx.files.evs + [out]))]
@@ -776,6 +788,7 @@ def _script_patched_arxml_impl(ctx):
             args = _task_args(ctx),
             out = out.path
         ),
+        env = _exclusive_label(ctx),
         use_default_shell_env = True
     )
     return [DefaultInfo(files = depset([out]))]
@@ -936,6 +949,7 @@ def _dvcfg_cli_step_impl(ctx):
             command = _format_command(ctx, folder, ctx.attr.command, **{ key: single_file_from_target(target).path for key, target in ctx.attr.inputs.items() }),
             pack = ctx.toolchains[":toolchain_type"].archive.pack.format(out.path, folder)
         ),
+        env = _exclusive_label(ctx),
         use_default_shell_env = True
     )
     return [DefaultInfo(files = depset([out])), ctx.attr.upstream[PipelineProjectProvider]]
@@ -1118,6 +1132,7 @@ def _validation_report_impl(ctx):
             unpack = _unpack(ctx, out.dirname),
             command = _format_command(ctx, out.dirname, '"{dvcfg}" project validate -b "{bsw_pkg}" -p "{project}" --fail-on NONE --report "{out}"', out = out.path)
         ),
+        env = _exclusive_label(ctx),
         use_default_shell_env = True
     )
     return [DefaultInfo(files = depset([out]))]
