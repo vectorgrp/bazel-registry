@@ -1,6 +1,6 @@
-load("@rules_java//java:defs.bzl", "java_binary")
+load("@rules_java//java:defs.bzl", "java_library")
+load("@rules_java//java:java_single_jar.bzl", "java_single_jar")
 load("@rules_java//java/common/rules:java_library.bzl", "JAVA_LIBRARY_ATTRS")
-load("@rules_java//java/common/rules:java_binary.bzl", "BASIC_JAVA_BINARY_ATTRIBUTES")
 load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 
 def default_http_archive_attrs(archive_name, *mutex_attrs):
@@ -229,23 +229,30 @@ generate_foundation_layer = macro(
     implementation = _generate_foundation_layer_impl
 )
 
-def _script_jar_impl(pai_version, script_classes, allow_beta, **kwargs):
-    java_binary(
-        main_class = "com.vector.cfg.WorkaroundForMissinFatJarTarget",
+def _script_jar_impl(name, pai_version, script_classes, allow_beta, tags, visibility, **kwargs):
+    lib_name = name + "_lib"
+    java_library(
+        name = lib_name,
+        **kwargs
+    )
+    java_single_jar(
+        name = name,
+        deps = [lib_name],
         deploy_manifest_lines = [
             "DvCfg-AutomationInterfaceJars-Compile-Version: " + pai_version,
             "Automation-Classes: " + ",".join(script_classes),
             "DvCfg-AutomationInterface-AllowBetaApiUsage: " + ("true" if allow_beta else "false")
         ],
-        **kwargs
+        tags = tags,
+        visibility = visibility
     )
 
 script_jar = macro(
     doc = "Internal macro for setting up a PAI project.",
-    attrs = dict({ k: v for k, v in JAVA_LIBRARY_ATTRS.items() if not k.startswith("_") and k in BASIC_JAVA_BINARY_ATTRIBUTES },
+    attrs = dict({ k: v for k, v in JAVA_LIBRARY_ATTRS.items() if not k.startswith("_") },
         pai_version = attr.string(mandatory = True, configurable = False),
         script_classes = attr.string_list(doc = "ScriptFactory class names.", mandatory = True, allow_empty = False, configurable = False),
-        tags = attr.string_list(doc = "[Inherited rule attribute](https://bazel.build/reference/be/common-definitions#common.tags)", configurable = False),
+        tags = attr.string_list(doc = "[Inherited rule attribute](https://bazel.build/reference/be/common-definitions#common-attributes)", configurable = False),
         allow_beta = attr.bool(doc = "Whether to allow usage of beta PAI APIs.", configurable = False)
     ),
     implementation = _script_jar_impl
@@ -843,7 +850,7 @@ def _arxml_patch_impl(name, srcs, call, visibility, **kwargs):
     )
     script_task(
         name = name,
-        script = script_jar_name + "_deploy.jar",
+        script = script_jar_name,
         task_name = "patch",
         visibility = visibility
     )
@@ -1297,7 +1304,7 @@ def _sac_impl(name, code, script_classes, task_name, pai_version, **kwargs):
     script_task_name = name + "_script_task"
     script_task(
         name = script_task_name,
-        script = script_jar_name + "_deploy.jar",
+        script = script_jar_name,
         task_name = task_name
     )
     tasks = [script_task_name]
