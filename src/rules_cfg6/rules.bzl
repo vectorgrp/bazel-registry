@@ -658,6 +658,7 @@ def _generate_swct_impl(ctx):
         env = _exclusive_label(ctx),
         use_default_shell_env = True
     )
+    return [DefaultInfo(files = depset([out]))]
 
 generate_swct = rule(
     doc = "Rule for generating SWC templates and contract phase headers.",
