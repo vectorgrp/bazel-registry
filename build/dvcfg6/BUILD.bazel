@@ -2,7 +2,7 @@ load("@stardoc//stardoc:stardoc.bzl", "stardoc")
 load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
 load("//build:rules.bzl", "module_build_props", "build_module")
 
-name, version, readme_title_substitutions = module_build_props("6.4.1")
+name, version, readme_title_substitutions = module_build_props("6.4.3")
 
 stardoc(
     name = "stardoc",
