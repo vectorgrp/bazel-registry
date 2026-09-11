@@ -12,7 +12,6 @@ import com.vector.cfg.model.mdf.model.autosar.commonpatterns.varianthandling.MIP
 import com.vector.cfg.model.mdf.model.autosar.commonpatterns.varianthandling.MIPostBuildVariantCriterionValueSet;
 import com.vector.cfg.model.mdf.model.autosar.commonpatterns.varianthandling.MIPostBuildVariantCriterionValue;
 import com.vector.cfg.model.mdf.model.autosar.commonpatterns.varianthandling.MIPostBuildVariantCriterion;
-import com.vector.cfg.model.mdf.ar4x.swcomponenttemplate.datatype.computationmethod.MICompuMethod;
 import com.vector.cfg.model.mdf.model.autosar.base.MIARPackage;
 
 public class EvsExtractor {

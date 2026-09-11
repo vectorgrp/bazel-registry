@@ -1,6 +1,6 @@
-load("@rules_java//java:defs.bzl", "java_binary")
+load("@rules_java//java:defs.bzl", "java_library")
+load("@rules_java//java:java_single_jar.bzl", "java_single_jar")
 load("@rules_java//java/common/rules:java_library.bzl", "JAVA_LIBRARY_ATTRS")
-load("@rules_java//java/common/rules:java_binary.bzl", "BASIC_JAVA_BINARY_ATTRIBUTES")
 load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 
 def default_http_archive_attrs(archive_name, *mutex_attrs):
@@ -229,27 +229,37 @@ generate_foundation_layer = macro(
     implementation = _generate_foundation_layer_impl
 )
 
-def _script_jar_impl(pai_version, script_classes, allow_beta, **kwargs):
-    java_binary(
-        main_class = "com.vector.cfg.WorkaroundForMissinFatJarTarget",
+def _script_jar_impl(name, pai_version, script_classes, allow_beta, tags, visibility, **kwargs):
+    lib_name = name + "_lib"
+    java_library(
+        name = lib_name,
+        **kwargs
+    )
+    java_single_jar(
+        name = name,
+        deps = [lib_name],
         deploy_manifest_lines = [
             "DvCfg-AutomationInterfaceJars-Compile-Version: " + pai_version,
             "Automation-Classes: " + ",".join(script_classes),
             "DvCfg-AutomationInterface-AllowBetaApiUsage: " + ("true" if allow_beta else "false")
         ],
-        **kwargs
+        tags = tags,
+        visibility = visibility
     )
 
 script_jar = macro(
     doc = "Internal macro for setting up a PAI project.",
-    attrs = dict({ k: v for k, v in JAVA_LIBRARY_ATTRS.items() if not k.startswith("_") and k in BASIC_JAVA_BINARY_ATTRIBUTES },
+    attrs = dict({ k: v for k, v in JAVA_LIBRARY_ATTRS.items() if not k.startswith("_") },
         pai_version = attr.string(mandatory = True, configurable = False),
         script_classes = attr.string_list(doc = "ScriptFactory class names.", mandatory = True, allow_empty = False, configurable = False),
-        tags = attr.string_list(doc = "[Inherited rule attribute](https://bazel.build/reference/be/common-definitions#common.tags)", configurable = False),
+        tags = attr.string_list(doc = "[Inherited rule attribute](https://bazel.build/reference/be/common-definitions#common-attributes)", configurable = False),
         allow_beta = attr.bool(doc = "Whether to allow usage of beta PAI APIs.", configurable = False)
     ),
     implementation = _script_jar_impl
 )
+
+def _exclusive_label(ctx):
+    return { "DVCFG_EXCLUSIVE_LABEL": str(ctx.label) }
 
 def _cli_cmd(ctx, input_files, cmd, **kwargs):
     out = ctx.actions.declare_file(ctx.label.name)
@@ -264,6 +274,7 @@ def _cli_cmd(ctx, input_files, cmd, **kwargs):
             out = out.path,
             **kwargs
         ),
+        env = _exclusive_label(ctx),
         use_default_shell_env = True
     )
     return [DefaultInfo(files = depset([out]))]
@@ -327,6 +338,7 @@ def _import_modules_impl(ctx):
                     file = file.path,
                     out = out.path
                 ),
+                env = _exclusive_label(ctx),
                 use_default_shell_env = True
             )
             upstream = out
@@ -538,6 +550,7 @@ def _run_export_impl(ctx):
                 split_post = " --split-post-build-variants" if ctx.attr.split_post_build_variants else "",
                 args = (" " + " ".join(ctx.attr.args)) if ctx.attr.args else ""
             )),
+        env = _exclusive_label(ctx),
         use_default_shell_env = True
     )
     return [DefaultInfo(files = depset([out]))]
@@ -564,6 +577,7 @@ def _export_flat_extract_impl(ctx):
                 split_post = " --split-post-build-variants" if ctx.attr.split_post_build_variants else "",
                 args = (" " + " ".join(ctx.attr.args)) if ctx.attr.args else ""
             )),
+        env = _exclusive_label(ctx),
         use_default_shell_env = True
     )
     return [DefaultInfo(files = depset([out]))]
@@ -605,6 +619,7 @@ def _generate_impl(ctx):
                 clean = " --clean-generate" if ctx.attr.skip_up_to_date_checks else "",
                 no_save = " --no-save" if ctx.attr.no_save else ""
             )),
+        env = _exclusive_label(ctx),
         use_default_shell_env = True
     )
     return [DefaultInfo(files = depset([out]))]
@@ -640,8 +655,10 @@ def _generate_swct_impl(ctx):
                 keep_tmp = " --keep-temp-files" if ctx.attr.keep_tmp_files else "",
                 no_save = " --no-save" if ctx.attr.no_save else ""
             )),
+        env = _exclusive_label(ctx),
         use_default_shell_env = True
     )
+    return [DefaultInfo(files = depset([out]))]
 
 generate_swct = rule(
     doc = "Rule for generating SWC templates and contract phase headers.",
@@ -681,6 +698,7 @@ def _system_extract_impl(ctx):
             ecu = ctx.attr.ecu if ctx.attr.ecu else name,
             out = out.path
         ),
+        env = _exclusive_label(ctx),
         use_default_shell_env = True
     )
     return [DefaultInfo(files = depset([out]))]
@@ -705,6 +723,7 @@ def _merged_extract_impl(ctx):
             input = '" -i "'.join([f.path for f in ctx.files.srcs]),
             out = out.path
         ),
+        env = _exclusive_label(ctx),
         use_default_shell_env = True
     )
     return [DefaultInfo(files = depset([out]))]
@@ -730,6 +749,7 @@ def _variant_extract_impl(ctx):
             extracts = " ".join(['-f {}="{}"'.format(variant, extract[DefaultInfo].files.to_list()[0].path) for extract, variant in ctx.attr.extracts.items()]),
             out = out.path
         ),
+        env = _exclusive_label(ctx),
         use_default_shell_env = True
     )
     return [DefaultInfo(files = depset(ctx.files.evs + [out]))]
@@ -776,6 +796,7 @@ def _script_patched_arxml_impl(ctx):
             args = _task_args(ctx),
             out = out.path
         ),
+        env = _exclusive_label(ctx),
         use_default_shell_env = True
     )
     return [DefaultInfo(files = depset([out]))]
@@ -830,7 +851,7 @@ def _arxml_patch_impl(name, srcs, call, visibility, **kwargs):
     )
     script_task(
         name = name,
-        script = script_jar_name + "_deploy.jar",
+        script = script_jar_name,
         task_name = "patch",
         visibility = visibility
     )
@@ -936,6 +957,7 @@ def _dvcfg_cli_step_impl(ctx):
             command = _format_command(ctx, folder, ctx.attr.command, **{ key: single_file_from_target(target).path for key, target in ctx.attr.inputs.items() }),
             pack = ctx.toolchains[":toolchain_type"].archive.pack.format(out.path, folder)
         ),
+        env = _exclusive_label(ctx),
         use_default_shell_env = True
     )
     return [DefaultInfo(files = depset([out])), ctx.attr.upstream[PipelineProjectProvider]]
@@ -1118,6 +1140,7 @@ def _validation_report_impl(ctx):
             unpack = _unpack(ctx, out.dirname),
             command = _format_command(ctx, out.dirname, '"{dvcfg}" project validate -b "{bsw_pkg}" -p "{project}" --fail-on NONE --report "{out}"', out = out.path)
         ),
+        env = _exclusive_label(ctx),
         use_default_shell_env = True
     )
     return [DefaultInfo(files = depset([out]))]
@@ -1282,7 +1305,7 @@ def _sac_impl(name, code, script_classes, task_name, pai_version, **kwargs):
     script_task_name = name + "_script_task"
     script_task(
         name = script_task_name,
-        script = script_jar_name + "_deploy.jar",
+        script = script_jar_name,
         task_name = task_name
     )
     tasks = [script_task_name]
