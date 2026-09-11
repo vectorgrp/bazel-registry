@@ -149,11 +149,13 @@ def _cfg6_archive_impl(repository_ctx):
             output = "_"
         )
     else:
+        prefix = repository_ctx.attr.url
+        prefix = prefix[prefix.rindex("/") + len("vector-davinci-configurator-classic") + 1:-4].replace("-", "/")
         download_and_extract(repository_ctx, "_download_")
         repository_ctx.extract(
             archive = "_download_/data.tar.zst",
             output = "_",
-            strip_prefix = "opt/vector-davinci-configurator-classic/evo2/eac"
+            strip_prefix = "opt/vector-davinci-configurator-classic" + prefix
         )
     repository_ctx.delete("_download_")
     _cfg6_repo_files(repository_ctx)
