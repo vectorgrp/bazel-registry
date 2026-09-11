@@ -10,9 +10,9 @@ cfg6_archive = use_repo_rule("@rules_cfg6//:defs.bzl", "cfg6_archive")
 cfg6_archive(
     name = "cfg6",
     nupkg_sha256 = "6f580df9f93353a84df0d5529004ad7c46042faa079cfae771221f7aef9968b2",
-    nupkg_url = "https://artifactory.vi.vector.int:443/artifactory/pes-davincicfgclassic-generic-pre-local/6.4.3/untested/vector-davinci-configurator-classic-evo2-cli-eac.nupkg",
+    nupkg_url = "https://packages.vehub.vector.com/nuget/flatcontainer/vector-davinci-configurator-classic-evo2-cli/6.4.3/vector-davinci-configurator-classic-evo2-cli.6.4.3.nupkg",
     sha256 = "4b88686490f889f206ed0e1b5e7d40e819eee8cb23dc6005832686fc44e601c8",
-    url = "https://artifactory.vi.vector.int/artifactory/pes-davincicfgclassic-generic-pre-local/6.4.3/untested/vector-davinci-configurator-classic-evo2-cli-eac.deb",
+    url = "https://packages.vehub.vector.com/apt/pool/generic/vector-davinci-configurator-classic/6.4.3/vector-davinci-configurator-classic-evo2-cli-6.4.3.deb",
 )
 
 register_toolchains("@cfg6//:toolchain")
@@ -20,6 +20,6 @@ register_toolchains("@cfg6//:toolchain")
 evo1_archive = use_repo_rule("//:evo1.bzl", "evo1_archive")
 evo1_archive(
     name = "dvcfg6_bridge_gui",
-    nupkg_url = "https://artifactory.vi.vector.int/artifactory/pes-davincicfgclassic-generic-pre-local/6.4.3/untested/vector-davinci-configurator-classic-dev.nupkg",
-    url = "https://artifactory.vi.vector.int/artifactory/pes-davincicfgclassic-generic-pre-local/6.4.3/untested/vector-davinci-configurator-classic-dev.deb",
+    nupkg_url = "https://packages.vehub.vector.com/nuget/flatcontainer/vector-davinci-configurator-classic/6.4.3/vector-davinci-configurator-classic.6.4.3.nupkg",
+    url = "https://packages.vehub.vector.com/apt/pool/generic/vector-davinci-configurator-classic/6.4.3/vector-davinci-configurator-classic-6.4.3.deb",
 )
