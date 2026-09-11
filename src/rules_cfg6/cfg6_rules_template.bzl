@@ -6,13 +6,19 @@ load("@rules_cfg6//:defs.bzl",
     _merged_arxml = "merged_arxml"
 )
 
+def _call_with_pai_version(function, **kwargs):
+    function(
+        pai_version = "CFG6_PAI_VERSION",
+        **kwargs
+    )
+
 script_jar = macro(
     doc = "Rule for setting up a PAI project.",
     inherit_attrs = _script_jar,
     attrs = {
         "pai_version": None
     },
-    implementation = lambda **kwargs: _script_jar(pai_version = "CFG6_PAI_VERSION", **kwargs)
+    implementation = lambda **kwargs: _call_with_pai_version(_script_jar, **kwargs)
 )
 
 sac = macro(
@@ -25,7 +31,7 @@ sac = macro(
     attrs = {
         "pai_version": None
     },
-    implementation = lambda **kwargs: _sac(pai_version = "CFG6_PAI_VERSION", **kwargs)
+    implementation = lambda **kwargs: _call_with_pai_version(_sac, **kwargs)
 )
 
 extract_evs = macro(
@@ -35,7 +41,7 @@ extract_evs = macro(
         "pai": None,
         "pai_version": None
     },
-    implementation = lambda **kwargs: _extract_evs(pai_version = "CFG6_PAI_VERSION", pai = Label(":pai_neverlink"), **kwargs)
+    implementation = lambda **kwargs: _call_with_pai_version(_extract_evs, pai = Label(":pai_neverlink"), **kwargs)
 )
 
 arxml_patch = macro(
@@ -44,7 +50,7 @@ arxml_patch = macro(
     attrs = {
         "pai_version": None
     },
-    implementation = lambda **kwargs: _arxml_patch(pai_version = "CFG6_PAI_VERSION", **kwargs)
+    implementation = lambda **kwargs: _call_with_pai_version(_arxml_patch, **kwargs)
 )
 
 merged_arxml = macro(
@@ -54,5 +60,5 @@ merged_arxml = macro(
         "pai": None,
         "pai_version": None
     },
-    implementation = lambda **kwargs: _merged_arxml(pai_version = "CFG6_PAI_VERSION", pai = Label(":pai_neverlink"), **kwargs)
+    implementation = lambda **kwargs: _call_with_pai_version(_merged_arxml, pai = Label(":pai_neverlink"), **kwargs)
 )

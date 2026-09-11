@@ -5,12 +5,12 @@ import com.vector.cfg.automation.scripting.base.IScriptTaskCode;
 import com.vector.cfg.model.pai.api.TransactionApiEntryPointKt;
 import org.jspecify.annotations.Nullable;
 import java.util.List;
-import static com.vector.cfg.automation.scripting.api.IScriptTaskTypeApi.DV_ECU_EXTRACT_PRODUCER;
+import static com.vector.cfg.automation.scripting.api.IScriptTaskTypeApi.DV_ON_ECU_EXTRACT_PRODUCER;
 
 public class ArxmlPatcher implements IScriptFactory, IScriptTaskCode<IProjectScriptExecutionContext> {
     @Override
     public void createScript(IScriptCreationApi creationApi) {
-        creationApi.scriptTask("patch", DV_ECU_EXTRACT_PRODUCER, b -> b.code(this));
+        creationApi.scriptTask("patch", DV_ON_ECU_EXTRACT_PRODUCER, b -> b.code(this));
     }
 
     @Override

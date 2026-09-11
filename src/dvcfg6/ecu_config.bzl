@@ -4,9 +4,12 @@ Bazel dependency to use and download a dedicated [DaVinci Configurator Classic](
 
 load("@rules_ecu_config//:ecu_config.bzl", "ECU_CONFIG_ATTRS", "create_ecu_config_repos")
 
+def _ecu_config_impl(module_ctx):
+    create_ecu_config_repos(module_ctx, lambda _: "@cfg6//:defs.bzl")
+
 ecu_config = module_extension(
     doc = "Module extension for using DaVinci projects in the Bazel pipeline.",
-    implementation = lambda module_ctx: create_ecu_config_repos(module_ctx, lambda _: "@cfg6//:defs.bzl"),
+    implementation = _ecu_config_impl,
     tag_classes = {
         "project": tag_class(
             doc = """Creates a DaVinci project repo for configuring an ECU and generating the BSW code.

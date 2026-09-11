@@ -21,9 +21,12 @@ def create_ecu_config_repos(module_ctx, get_cfg6_defs):
                 as_code = proj.as_code
             )
 
+def _ecu_config_impl(module_ctx):
+    create_ecu_config_repos(module_ctx, lambda proj: proj.cfg6_defs)
+
 ecu_config = module_extension(
     doc = "Module extension for using DaVinci projects in the Bazel pipeline.",
-    implementation = lambda module_ctx: create_ecu_config_repos(module_ctx, lambda proj: proj.cfg6_defs),
+    implementation = _ecu_config_impl,
     tag_classes = {
         "project": tag_class(
             doc = """Creates a DaVinci project repo for configuring an ECU and generating the BSW code.

@@ -11,7 +11,7 @@ def _dbg_target(name, jars):
     script_name = name + "_dbg_script"
     dbg_as_code_script(
         name = script_name,
-        tags = ["manual", "no-ide"],
+        tags = ["no-ide"],
         jars = jars,
         bsw_pkg = "BSW",
         dvjson = "DVJSON",
@@ -19,22 +19,24 @@ def _dbg_target(name, jars):
     )
     sh_binary(
         name = name + "_dbg",
+        tags = ["application"],
         srcs = [native.package_relative_label(script_name)],
         use_bash_launcher = True,
         visibility = ["//visibility:public"]
     )
 
-def _eac_jar_impl(name, plugins, arg, **kwargs):
+def _eac_jar_impl(name, plugins, arg, tags, **kwargs):
     jar_name = name + "_jar"
     script_jar(
         name = jar_name,
         plugins = plugins + ["CFG6_EAC_AP"],
         script_classes = ["com.vector.eac.EaC"],
+        tags = tags + ["manual"],
         **kwargs
     )
     as_code_eac(
         name = name,
-        jar = native.package_relative_label(jar_name),
+        jar = native.package_relative_label(jar_name + "_deploy.jar"),
         arg = arg,
         visibility = ["//visibility:public"]
     )
@@ -58,8 +60,9 @@ eac_jar = macro(
     inherit_attrs = script_jar,
     attrs = {
         "script_classes": None,
-        "plugins": attr.label_list(doc = "[Inherited rule attribute](https://bazel.build/reference/be/java#java_library)", configurable = False),
-        "deps": attr.label_list(doc = "[Inherited rule attribute](https://bazel.build/reference/be/java#java_library)", configurable = False),
+        "plugins": attr.label_list(doc = "[Inherited rule attribute](https://bazel.build/reference/be/java#java_library.plugins)", configurable = False),
+        "deps": attr.label_list(doc = "[Inherited rule attribute](https://bazel.build/reference/be/java#java_library.deps)", configurable = False),
+        "tags": attr.string_list(doc = "[Inherited rule attribute](https://bazel.build/reference/be/common-definitions#common.tags)", configurable = False),
         "arg": attr.label(doc = '''Optional argument. Use rule `load("@rules_cfg6//:defs.bazl", "as_code_arg")` to define the argument.
 
 For deserializing the argument a dependency to Gson is required. `@dvcfg6//:gson` can be used for this.''')
