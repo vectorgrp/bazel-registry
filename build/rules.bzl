@@ -1,3 +1,4 @@
+load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
 load("@rules_pkg//pkg/private/zip:zip.bzl", "pkg_zip")
 load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 
@@ -19,23 +20,6 @@ bazep_dep(name = "{name}", version = "{version}")
 ```""".format(header = _STARDOC_HEADER, name = name, version = version)
         }
     )
-
-def _versioned_module_bazel_impl(ctx):
-    target = ctx.actions.declare_file("MODULE.bazel")
-    ctx.actions.expand_template(
-        template = ctx.file.module_bazel,
-        output = target,
-        substitutions = ctx.attr.substitutions
-    )
-    return [DefaultInfo(files = depset([target]))]
-
-versioned_module_bazel = rule(
-    attrs = {
-        "module_bazel": attr.label(allow_single_file = ["MODULE.bazel"], mandatory = True),
-        "substitutions": attr.string_dict(mandatory = True)
-    },
-    implementation = _versioned_module_bazel_impl
-)
 
 def _append_files_impl(srcs, out, **kwargs):
     native.genrule(
@@ -95,15 +79,23 @@ def _build_module_impl(name, version, readme, **kwargs):
     zip_name = "{}-{}.zip".format(name, version)
     module_bazel_label = Label("//src/{}:MODULE.bazel".format(name))
     module_bazel_name = name + "_module_bazel"
-    versioned_module_bazel(
+    expand_template(
         name = module_bazel_name,
-        module_bazel = module_bazel_label,
+        template = module_bazel_label,
+        out = "MODULE.bazel",
         substitutions = { 'module(name = "' + name: 'module(name = "{}", version = "{}'.format(name, version) }
+    )
+    build_bazel_name = name + "_build_bazel"
+    expand_template(
+        name = build_bazel_name,
+        template = module_bazel_label.same_package_label("BUILD.bazel"),
+        out = "generated/BUILD.bazel",
+        substitutions = { '\nfilegroup(name = "srcs", srcs = glob(include = ["**"], exclude = ["BUILD.bazel"]))': '' }
     )
     pkg_zip_name = name + "_pkg_zip"
     pkg_zip(
         name = pkg_zip_name,
-        srcs = [module_bazel_label.same_package_label("srcs")],
+        srcs = [module_bazel_label.same_package_label("srcs"), build_bazel_name],
         out = zip_name
     )
     source_json_name = name + "_source_json"
