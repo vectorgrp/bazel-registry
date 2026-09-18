@@ -134,17 +134,14 @@ def _cfg6_repo_files(repository_ctx):
         }
     )
     repository_ctx.template("defs.bzl", Label("cfg6_defs_template.bzl"))
-    repository_ctx.template(
-        "rules.bzl",
-        Label("cfg6_rules_template.bzl"),
-        substitutions = {
-            "CFG6_PAI_VERSION": _pai_version(repository_ctx)
-        }
-    )
+    repository_ctx.template("rules.bzl", Label("cfg6_rules_template.bzl"), substitutions = { "CFG6_PAI_VERSION": _pai_version(repository_ctx) })
     return cli
 
 def _cfg6_archive_impl(repository_ctx):
-    if repository_ctx.os.name.startswith("windows"):
+    local_dvcfg6 = repository_ctx.getenv("LOCAL_DVCFG6")
+    if local_dvcfg6:
+        _local_cfg6_with_path(repository_ctx, local_dvcfg6)
+    elif repository_ctx.os.name.startswith("windows"):
         download_and_extract(repository_ctx, "_download_", url = repository_ctx.attr.nupkg_url, sha256 = repository_ctx.attr.nupkg_sha256, auth_patterns = repository_ctx.attr.nupkg_auth_patterns)
         repository_ctx.extract(
             archive = "_download_/tools/archive.zip",
@@ -163,19 +160,19 @@ def _cfg6_archive_impl(repository_ctx):
     _cfg6_repo_files(repository_ctx)
 
 cfg6_archive = repository_rule(
-    doc = "Rule for using a DaVinci Configurator Classic Version 6 .nupkg or .deb archive.",
+    doc = "Rule for using a DaVinci Configurator Classic Version 6 .nupkg or .deb archive. Use a locally installed DaVinci Configurator Classic Version 6 with `--repo_env=LOCAL_DVCFG6='<path>'`.",
     attrs = { "nupkg_" + k: v for k, v in default_http_archive_attrs(".nupkg", "url").items() } | default_http_archive_attrs(".deb", "nupkg_url"),
     implementation = _cfg6_archive_impl
 )
 
-def _absolute_path(repository_ctx, s):
-    return repository_ctx.path(s) if s.startswith("/") or s.startswith("\\") or (len(s) > 2 and s[1] == ":" and (s[2] == "/" or s[2] == "\\")) else repository_ctx.path(str(repository_ctx.workspace_root) + "/" + s)
-
-def _local_cfg6_impl(repository_ctx):
-    path = _absolute_path(repository_ctx , repository_ctx.attr.path)
-    repository_ctx.symlink(path, "_")
+def _local_cfg6_with_path(repository_ctx, s):
+    s = repository_ctx.path(s) if s.startswith("/") or s.startswith("\\") or (len(s) > 2 and s[1] == ":" and (s[2] == "/" or s[2] == "\\")) else repository_ctx.path(str(repository_ctx.workspace_root) + "/" + s)
+    repository_ctx.symlink(s, "_")
     cli = _cfg6_repo_files(repository_ctx)
     repository_ctx.watch(repository_ctx.path(cli).realpath)
+
+def _local_cfg6_impl(repository_ctx):
+    _local_cfg6_with_path(repository_ctx , repository_ctx.attr.path)
 
 local_cfg6 = repository_rule(
     doc = "Rule for using a local DaVinci Configurator Classic Version 6 installation.",

@@ -2,5 +2,9 @@ package(default_visibility = ["//visibility:public"])
 filegroup(name = "srcs", srcs = glob(include = ["**"], exclude = ["BUILD.bazel"]))
 alias(
     name = "pai",
+    actual = "@cfg6//:pai",
+)
+alias(
+    name = "pai_beta",
     actual = "@cfg6//:pai_beta",
 )
