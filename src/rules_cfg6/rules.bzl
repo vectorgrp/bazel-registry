@@ -36,6 +36,9 @@ def single_file_from_target(target):
 def get_bash(repository_ctx):
     return repository_ctx.getenv("BAZEL_SH", "bash")
 
+def absolute_path(repository_ctx, s):
+    return repository_ctx.path(s) if s.startswith("/") or s.startswith("\\") or (len(s) > 2 and s[1] == ":" and (s[2] == "/" or s[2] == "\\")) else repository_ctx.path(str(repository_ctx.workspace_root) + "/" + s)
+
 Cfg6ToolProvider = provider()
 
 ArchiveToolProvider = provider()
@@ -138,8 +141,9 @@ def _cfg6_repo_files(repository_ctx):
 def _cfg6_archive_impl(repository_ctx):
     local_dvcfg6 = repository_ctx.getenv("LOCAL_DVCFG6")
     if local_dvcfg6:
-        _local_cfg6_with_path(repository_ctx, local_dvcfg6)
-    elif repository_ctx.os.name.startswith("windows"):
+        _local_cfg6_at_path(repository_ctx, local_dvcfg6)
+        return
+    if repository_ctx.os.name.startswith("windows"):
         download_and_extract(repository_ctx, "_download_", url = repository_ctx.attr.nupkg_url, sha256 = repository_ctx.attr.nupkg_sha256, auth_patterns = repository_ctx.attr.nupkg_auth_patterns)
         repository_ctx.extract(
             archive = "_download_/tools/archive.zip",
@@ -163,14 +167,13 @@ cfg6_archive = repository_rule(
     implementation = _cfg6_archive_impl
 )
 
-def _local_cfg6_with_path(repository_ctx, s):
-    s = repository_ctx.path(s) if s.startswith("/") or s.startswith("\\") or (len(s) > 2 and s[1] == ":" and (s[2] == "/" or s[2] == "\\")) else repository_ctx.path(str(repository_ctx.workspace_root) + "/" + s)
-    repository_ctx.symlink(s, "_")
+def _local_cfg6_at_path(repository_ctx, s):
+    repository_ctx.symlink(absolute_path(repository_ctx, s), "_")
     cli = _cfg6_repo_files(repository_ctx)
     repository_ctx.watch(repository_ctx.path(cli).realpath)
 
 def _local_cfg6_impl(repository_ctx):
-    _local_cfg6_with_path(repository_ctx , repository_ctx.attr.path)
+    _local_cfg6_at_path(repository_ctx , repository_ctx.attr.path)
 
 local_cfg6 = repository_rule(
     doc = "Rule for using a local DaVinci Configurator Classic Version 6 installation.",
