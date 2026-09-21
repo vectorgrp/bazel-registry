@@ -1255,7 +1255,7 @@ it provides the following targets:
 
 _dbg_script_postfix = "_dbg_script"
 
-def _sac_dbg_script_impl(ctx):
+def _app_design_dbg_script_impl(ctx):
     command = '''
 if [[ "${{EAC_DEBUG-}}" == "true" ]]; then
     export DVCFG_JVM_ARGS='-agentlib:jdwp=transport=dt_socket,server=y,suspend=n -Djdk.attach.allowAttachSelf=true'
@@ -1284,18 +1284,18 @@ wait "$child"
         name = ctx.label.name[:-len(_dbg_script_postfix)]
     )
 
-_SAC_ATTRS = dict(
+_APP_DESIGN_ATTRS = dict(
     _SCRIPT_PATCHED_ARXML_ATTRS,
     task_name = attr.string(default = "SaC")
 )
 
-sac_dbg_script = rule(
-    attrs = _SAC_ATTRS,
-    implementation = _sac_dbg_script_impl,
+app_design_dbg_script = rule(
+    attrs = _APP_DESIGN_ATTRS,
+    implementation = _app_design_dbg_script_impl,
     toolchains = [":toolchain_type"]
 )
 
-def _sac_impl(name, code, script_classes, task_name, pai_version, **kwargs):
+def _app_design_impl(name, code, script_classes, task_name, pai_version, **kwargs):
     script_jar_name = name + "_script_jar"
     script_jar(
         name = script_jar_name,
@@ -1317,7 +1317,7 @@ def _sac_impl(name, code, script_classes, task_name, pai_version, **kwargs):
         **kwargs
     )
     dbg_script_name = name + _dbg_script_postfix
-    sac_dbg_script(
+    app_design_dbg_script(
         name = dbg_script_name,
         tasks = tasks,
         task_name = task_name,
@@ -1329,14 +1329,14 @@ def _sac_impl(name, code, script_classes, task_name, pai_version, **kwargs):
         use_bash_launcher = True,
     )
 
-sac = macro(
-    doc = "Internal macro for setting up SaC.",
+app_design = macro(
+    doc = "Internal macro for setting up an AppDesign project.",
     inherit_attrs = script_patched_arxml,
-    attrs = dict(_SAC_ATTRS,
+    attrs = dict(_APP_DESIGN_ATTRS,
         tasks = None,
         code = JAVA_LIBRARY_ATTRS["runtime_deps"],
-        script_classes = attr.string_list(default = ["SaC"], configurable = False),
+        script_classes = attr.string_list(default = ["AppDesign"], configurable = False),
         pai_version = attr.string(mandatory = True, configurable = False)
     ),
-    implementation = _sac_impl
+    implementation = _app_design_impl
 )

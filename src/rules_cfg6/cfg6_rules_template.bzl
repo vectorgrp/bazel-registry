@@ -1,6 +1,6 @@
 load("@rules_cfg6//:defs.bzl",
     _script_jar = "script_jar",
-    _sac = "sac",
+    _app_design = "app_design",
     _extract_evs = "extract_evs",
     _arxml_patch = "arxml_patch",
     _merged_arxml = "merged_arxml"
@@ -15,17 +15,17 @@ script_jar = macro(
     implementation = lambda **kwargs: _script_jar(pai_version = "CFG6_PAI_VERSION", **kwargs)
 )
 
-sac = macro(
-    doc = """Macro for setting up SaC. The following targets are provided:
+app_design = macro(
+    doc = """Macro for setting up an AppDesign project. The following targets are provided:
 
-- `<name>_dbg`: executable bazel target for running/debugging the SaC code in the IDE.
+- `<name>_dbg`: executable bazel target for running/debugging the AppDesign code in the IDE.
 - `<name>`: The resulting `.arxml` file produced by the code.
 """,
-    inherit_attrs = _sac,
+    inherit_attrs = _app_design,
     attrs = {
         "pai_version": None
     },
-    implementation = lambda **kwargs: _sac(pai_version = "CFG6_PAI_VERSION", **kwargs)
+    implementation = lambda **kwargs: _app_design(pai_version = "CFG6_PAI_VERSION", **kwargs)
 )
 
 extract_evs = macro(

@@ -36,7 +36,7 @@ load(":rules.bzl",
     _run_on_project = "run_on_project",
     _apply_bswmd = "apply_bswmd",
     _dvjson = "dvjson",
-    _sac = "sac",
+    _app_design = "app_design",
     _arxml_patch = "arxml_patch",
     _extract_evs = "extract_evs",
     _merged_arxml = "merged_arxml"
@@ -75,7 +75,7 @@ pipeline_executable = _pipeline_executable
 run_on_project = _run_on_project
 apply_bswmd = _apply_bswmd
 dvjson = _dvjson
-sac = _sac
+app_design = _app_design
 arxml_patch = _arxml_patch
 extract_evs = _extract_evs
 merged_arxml = _merged_arxml
