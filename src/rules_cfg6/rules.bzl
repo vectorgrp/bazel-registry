@@ -1267,7 +1267,7 @@ _term() {{
 }}
 trap _term SIGINT
 
-"{xpro}" run-script -i "{input}" ''' + ('-e "{evs}" ' if ctx.attr.evs else "") + '''-l "{jar}" -t "{task}" "$BUILD_WORKSPACE_DIRECTORY/{pkg}/{name}.arxml" &
+"{xpro}" run-script -i "{input}" ''' + ('-e "{evs}" ' if len(ctx.attr.srcs) > 1 else "") + '''-l "{jar}" -t "{task}" "$BUILD_WORKSPACE_DIRECTORY/{pkg}/{name}.arxml" &
 
 child=$!
 wait "$child"
