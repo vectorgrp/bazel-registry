@@ -1,6 +1,7 @@
 load("defs.bzl", "as_code_arg")
 package(default_visibility = ["//visibility:public"])
 filegroup(name = "srcs", srcs = glob(include = ["**"], exclude = ["BUILD.bazel"]))
+exports_files(["ArxmlPatcher.java", "empty.arxml", "EvsExtractor.java"])
 toolchain_type(name = "toolchain_type")
 as_code_arg(
     name = "false",
