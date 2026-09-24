@@ -1151,7 +1151,7 @@ _term() {{
 }}
 trap _term SIGINT
 
-"{xpro}" run-script -i "{input}" ''' + ('-e "{evs}" ' if ctx.attr.evs else "") + '''-l "{jar}" -t "{task}" "$BUILD_WORKSPACE_DIRECTORY/{pkg}/{name}.arxml" &
+"{xpro}" run-script -i "{input}" ''' + ('-e "{evs}" ' if len(ctx.attr.srcs) > 1 else "") + '''-l "{jar}" -t "{task}" "$BUILD_WORKSPACE_DIRECTORY/{pkg}/{name}.arxml" &
 
 child=$!
 wait "$child"
@@ -1170,7 +1170,7 @@ wait "$child"
 
 _APP_DESIGN_ATTRS = dict(
     _SCRIPT_PATCHED_ARXML_ATTRS,
-    task_name = attr.string(default = "SaC")
+    task_name = attr.string(default = "AppDesign")
 )
 
 app_design_dbg_script = rule(
