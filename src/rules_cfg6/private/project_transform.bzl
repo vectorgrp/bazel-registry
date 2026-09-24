@@ -27,10 +27,8 @@ export APPDATA="$fakehome"
 export DVCFG_JVM_ARGS="-Duser.home=$fakehome"
 export JAVA_OPTS="-Duser.home=$fakehome"
 
-trap "\\"$dvcfg_exe\\" stop -p \\"$out_project_dir\\" || true" EXIT
+trap "\\"$dvcfg_exe\\" stop -p \\"$out_project_dir\\" --force; rm -rf \\"$tmp_dir\\" || true" EXIT
 "$dvcfg_exe" $command -p "$out_project_dir" -b "$bsw_pkg_dir" $@
-
-rm -rf "$tmp_dir" || true
     """
 
 def cfg6_project_transform_rule(*, command_builder, attrs = {}, **kwargs):
