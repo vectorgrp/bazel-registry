@@ -5,8 +5,6 @@ load("//private:project_provider.bzl", "Cfg6ProjectInfo", "UPSTREAM_ATTR", "get_
 load("//toolchain:defs.bzl", "TOOLCHAIN_TYPE")
 load(":remote_caching.bzl", "RemoteCacheInfo")
 
-_JQ_TOOLCHAIN_TYPE = Label("@jq.bzl//jq/toolchain:type")
-
 _PROJECT_GENERATE_LAUNCHER_SCRIPT = """
 set -eo pipefail
 
@@ -49,22 +47,8 @@ export APPDATA="$fakehome"
 export DVCFG_JVM_ARGS="-Duser.home=$fakehome $EXTRA_JVM_ARGS"
 export JAVA_OPTS="-Duser.home=$fakehome $EXTRA_JVM_ARGS"
 
-# Redirect genData/genDataVtt/source folders of the general settings (referenced via the .dvjson) into output_dir
-dvjson=$(find "$tmp_project_dir" -maxdepth 1 -name "*.dvjson" | head -n 1)
-general_json="$tmp_project_dir/$("$JQ_BIN" -r '.general' "$dvjson")"
-mkdir -p "$output_dir/genData" "$output_dir/genDataVtt" "$output_dir/source"
-# Settings paths are resolved relative to the settings file, so pass absolute paths.
-# On Windows convert msys paths (/c/foo) to native drive paths (C:/foo), as msys does not translate file contents.
-abs_output_dir=$(realpath "$output_dir")
-case `uname` in
-    MINGW*|MSYS*|CYGWIN*) abs_output_dir=$(cygpath -m "$abs_output_dir");;
-esac
-"$JQ_BIN" --arg gendata "$abs_output_dir/genData" --arg gendatavtt "$abs_output_dir/genDataVtt" --arg source "$abs_output_dir/source" \\
-    '.folders.genData = $gendata | .folders.genDataVtt = $gendatavtt | .folders.source = $source' "$general_json" > "$general_json.tmp"
-mv -f "$general_json.tmp" "$general_json"
-
-trap "\\"$dvcfg_exe\\" stop -p \\"$tmp_project_dir\\" --force; rm -rf \\"$tmp_dir\\" || true" EXIT
-"$dvcfg_exe" $command -p "$tmp_project_dir" -b "$tmp_bsw_pkg_dir" --no-save $@
+#trap "\\"$dvcfg_exe\\" stop -p \\"$tmp_project_dir\\" --force; rm -rf \\"$tmp_dir\\" || true" EXIT
+"$dvcfg_exe" $command -p "$tmp_project_dir" -b "$tmp_bsw_pkg_dir" -o "$output_dir" --no-save $@
 
 # Redact generation date
 find "$output_dir" -type f \\( -name "*.c" -o -name "*.h" -o -name "*.lsl" \\) -exec \\
@@ -87,9 +71,7 @@ def cfg6_generation_rule(command_builder, attrs = {}, **kwargs):
         bsw_pkg_root_dir = get_bsw_pkg_root(project_in)
 
         command = command_builder(ctx)
-
-        jq_bin = ctx.toolchains[_JQ_TOOLCHAIN_TYPE].jqinfo.bin
-        env = {"JQ_BIN": jq_bin.path}
+        env = {}
         args = ctx.actions.args().add(toolchain.cli_exe).add(project_in_root_dir).add(bsw_pkg_root_dir).add(command.command).add(intermediate_output_dir.path)
 
         inputs = [project_in.project_files, project_in.bsw_pkg_files]
@@ -110,7 +92,6 @@ def cfg6_generation_rule(command_builder, attrs = {}, **kwargs):
             arguments = [args, command.args],
             env = env,
             inputs = depset(transitive = inputs),
-            tools = [jq_bin],
             outputs = [intermediate_output_dir],
             toolchain = TOOLCHAIN_TYPE,
             mnemonic = "DaVinciCfg6",
@@ -144,6 +125,6 @@ def cfg6_generation_rule(command_builder, attrs = {}, **kwargs):
             _extra_jvm_args = attr.label(providers = [BuildSettingInfo], default = Label("//:extra_jvm_args")),
             **attrs
         ),
-        toolchains = [TOOLCHAIN_TYPE, _JQ_TOOLCHAIN_TYPE],
+        toolchains = [TOOLCHAIN_TYPE],
         **kwargs
     )
