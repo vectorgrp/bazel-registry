@@ -13,14 +13,13 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.google.gson.JsonPrimitive;
 
-/**
- * Usage: {@code java -cp <gson.jar> SettingsPatch.java <dvjson> <patch>}
- */
 public final class SettingsPatcher {
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
-    /** Marker property name used in array elements to signal deletion of a matched element. */
+    /**
+     * Marker property name used in array elements to signal deletion of a matched element.
+     */
     private static final String DELETE_MARKER = "__delete__";
 
     /**
@@ -39,11 +38,6 @@ public final class SettingsPatcher {
         // utility class
     }
 
-    /**
-     * Entry point. Parses command-line arguments and applies the patch.
-     *
-     * @param args {@code -d <dvjson_path> -p <patch_file_path>}
-     */
     public static void main(String[] args) throws IOException {
         if (args.length != 2 || !args[0].endsWith(".dvjson") || !args[1].endsWith(".json")) {
             System.err.println("Usage: java SettingsPatch.java <dvjson> <patch>");
