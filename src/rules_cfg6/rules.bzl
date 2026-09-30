@@ -49,8 +49,6 @@ AsCodeTypeProvider = provider()
 
 AsCodeArgProvider = provider()
 
-PipelineProjectProvider = provider()
-
 DvProjectProvider = provider()
 
 def _cfg6_toolchain_impl(ctx):
@@ -371,7 +369,7 @@ as_code_arg = rule(
     implementation = _as_code_arg_impl
 )
 
-_UPSTREAM_ATTR = { "upstream": attr.label(doc = "The upstream pipeline target.", providers = [PipelineProjectProvider], allow_single_file = [".tar.gz"], mandatory = True) }
+_UPSTREAM_ATTR = { "upstream": attr.label(doc = "The upstream pipeline target.", allow_single_file = [".tar.gz"], mandatory = True) }
 
 _STD_EXPORT_ATTRS = dict(
     _UPSTREAM_ATTR,
@@ -436,7 +434,7 @@ export_flat_extract = rule(
 )
 
 def _format_command(ctx, folder, cmd, **kwargs):
-    pipeline_project_provider = ctx.attr.upstream[PipelineProjectProvider]
+    pipeline_project_provider = {}
     return cmd.format(
         dvcfg = kwargs.get("dvcfg", default = ctx.toolchains[":toolchain_type"].cfg6.cli),
         project = kwargs.get("project", default = folder + "/" + pipeline_project_provider.dvjson),
@@ -760,114 +758,10 @@ merged_arxml = macro(
     implementation = _merged_arxml_impl
 )
 
-def _downstream_project_impl(ctx):
-    out = ctx.actions.declare_file(ctx.label.name + ".tar.gz")
-    dvjson = ctx.attr.dvjson
-    i = dvjson.rfind("/")
-    ctx.actions.run_shell(
-        outputs = [out],
-        inputs =  [ctx.file.upstream],
-        command = ctx.toolchains[":toolchain_type"].archive.pack.format(out.path, dvjson[:i])
-    )
-    return [DefaultInfo(files = depset([out])), PipelineProjectProvider(dvjson = dvjson[i + 1:], bsw_pkg = ctx.attr.bsw_pkg)]
-
-downstream_project = rule(
-    doc = "Internal rule for creating the `project` target of an ECU configuration repo.",
-    attrs = _STD_CLI_ATTRS,
-    implementation = _downstream_project_impl,
-    toolchains = [":toolchain_type"]
-)
-
-def _archived_project_impl(ctx):
-    return [DefaultInfo(files = depset([ctx.file.archive])), PipelineProjectProvider(dvjson = ctx.attr.dvjson, bsw_pkg = ctx.attr.bsw_pkg)]
-
-archived_project = rule(
-    doc = "Rule for using an archived DaVinci project.",
-    attrs = dict(
-        _BSW_PKG_ATTR,
-        dvjson = attr.string(doc = "The name of the .dvjson file in the archive.", mandatory = True),
-        archive = attr.label(doc = "The archive file.", allow_single_file = True, mandatory = True)
-    ),
-    implementation = _archived_project_impl,
-    toolchains = [":toolchain_type"]
-)
-
-def _dvcfg_cli_step_impl(ctx):
-    out = ctx.actions.declare_file(ctx.label.name + ".tar.gz")
-    folder = out.dirname + "/" + ctx.label.name
-    ctx.actions.run_shell(
-        outputs = [out],
-        inputs =  [file for target in ctx.attr.inputs.values() for file in target[DefaultInfo].files.to_list()] + [ctx.file.upstream],
-        command = "{unpack} && {command} && {pack}".format(
-            unpack = _unpack(ctx, folder),
-            command = _format_command(ctx, folder, ctx.attr.command, **{ key: single_file_from_target(target).path for key, target in ctx.attr.inputs.items() }),
-            pack = ctx.toolchains[":toolchain_type"].archive.pack.format(out.path, folder)
-        ),
-        env = _exclusive_label(ctx),
-        use_default_shell_env = True
-    )
-    return [DefaultInfo(files = depset([out])), ctx.attr.upstream[PipelineProjectProvider]]
-
-dvcfg_cli_step = rule(
-    doc = "Internal rule for running a generic CLI command on a DaVinci project.",
-    attrs = dict(
-        _UPSTREAM_ATTR,
-        command = attr.string(doc = "Command to run on the project (see [run_shell](https://bazel.build/rules/lib/builtins/actions#run_shell.command)). Use `{dvcfg}` for the DaVinci Configurator Classic CLI executable, `{project}` for the .dvjson file and `{bsw_pkg}` for the BSW package folder.", mandatory = True),
-        inputs = attr.string_keyed_label_dict(doc = 'Input files (see [run_shell](https://bazel.build/rules/lib/builtins/actions#run_shell.inputs)). Use `{key}` to access file `input["key"]` in `command`.', allow_files = True),
-    ),
-    implementation = _dvcfg_cli_step_impl,
-    toolchains = [":toolchain_type"]
-)
-
 def _rlocation(ctx, target):
     if type(target) == _LIST_TYPE:
         return '","'.join(["$(rlocation {})".format(ctx.expand_location("$(rlocationpath {})".format(t.label), [t])) for t in target])
     return "$(rlocation {})".format(ctx.expand_location("$(rlocationpath {})".format(target.label), [target]))
-
-def _dvcfg_cli_executable_script_impl(ctx):
-    out = ctx.actions.declare_file(ctx.label.name + "/" + ctx.label.name + ".sh")
-    ctx.actions.write(
-        out,
-        "{unpack} && {command}".format(
-            unpack = ctx.toolchains[":toolchain_type"].archive.unpack.format(archive = _rlocation(ctx, ctx.attr.upstream), folder = "upstream"),
-            command = _format_command(ctx, "upstream", ctx.attr.command, **{ key: _rlocation(ctx, target) for key, target in ctx.attr.inputs.items() })
-        ),
-        is_executable = True
-    )
-    return [DefaultInfo(executable = out, runfiles = ctx.runfiles(files = [ctx.file.upstream] + [file for target in ctx.attr.inputs.values() for file in target[DefaultInfo].files.to_list()]))]
-
-dvcfg_cli_executable_script = rule(
-    doc = "Internal rule for creating a generic executable on a DaVinci project.",
-    attrs = dict(
-        _UPSTREAM_ATTR,
-        command = attr.string(doc = "Command to run on the project (see [run_shell](https://bazel.build/rules/lib/builtins/actions#run_shell.command)). Use `{dvcfg}` for the DaVinci Configurator Classic CLI executable, `{project}` for the .dvjson file and `{bsw_pkg}` for the BSW package folder.", mandatory = True),
-        inputs = attr.string_keyed_label_dict(doc = 'Input files (see [run_shell](https://bazel.build/rules/lib/builtins/actions#run_shell.inputs)). Use `{key}` to access file `input["key"]` in `command`.', allow_files = True),
-    ),
-    implementation = _dvcfg_cli_executable_script_impl,
-    toolchains = [":toolchain_type"]
-)
-
-def _pipeline_executable_impl(name, visibility, tags, **kwargs):
-    script_name = name + "_script"
-    dvcfg_cli_executable_script(
-        name = script_name,
-        visibility = ["//visibility:private"],
-        tags = ["no-ide"],
-        **kwargs
-    )
-    sh_binary(
-        name = name,
-        srcs = [script_name],
-        use_bash_launcher = True,
-        visibility = visibility,
-        tags = tags
-    )
-
-pipeline_executable = macro(
-    doc = "Macro for creating a generic executable on a DaVinci project.",
-    inherit_attrs = dvcfg_cli_executable_script,
-    implementation = _pipeline_executable_impl
-)
 
 def _script_task_impl(ctx):
     return [
@@ -884,75 +778,6 @@ script_task = rule(
         "file_args": attr.string_keyed_label_dict(doc = "Optional file arguments for the script task (keys are arg names).", allow_files = True)
     },
     implementation = _script_task_impl
-)
-
-def _gui_script_impl(ctx):
-    out = ctx.actions.declare_file(ctx.label.name + ".sh")
-    cfg6 = ctx.toolchains[":toolchain_type"].cfg6
-    evo1 = ctx.attr.evo1
-    template = '"{dvcfg}" --project "{project}" --bsw-package "{bsw_pkg}" && read -srn 1 -p "Press any key to terminate..."' if evo1 else cfg6.gui_template
-    ctx.actions.write(
-        out,
-        template.format(
-            dvcfg = evo1 if evo1 else cfg6.gui,
-            project = ctx.attr.dvjson,
-            bsw_pkg = ctx.attr.bsw_pkg
-        ),
-        is_executable = True
-    )
-    return [DefaultInfo(executable = out, runfiles = ctx.runfiles(files = [ctx.file.upstream]))]
-
-gui_script = rule(
-    doc = "Internal rule for generating a launcher script for DaVinci Configurator Classic Version 6 GUI tool.",
-    attrs = dict(_STD_CLI_ATTRS, evo1 = attr.string(doc = "The DaVinci Configurator Classic Version 6 Evo1 GUI executable for opening the project (absolute path).")),
-    implementation = _gui_script_impl,
-    toolchains = [":toolchain_type"]
-)
-
-def _edit_project_impl(name, visibility, tags, **kwargs):
-    script_name = name + "_script"
-    gui_script(
-        name = script_name,
-        visibility = ["//visibility:private"],
-        tags = ["no-ide"],
-        **kwargs
-    )
-    sh_binary(
-        name = name,
-        srcs = [script_name],
-        visibility = visibility,
-        tags = tags
-    )
-
-edit_project = macro(
-    doc = "Macro for editing the project of an `ecu_config` repo in DaVinci Configurator Classic Version 6 GUI tool.",
-    inherit_attrs = gui_script,
-    implementation = _edit_project_impl
-)
-
-def _run_script_impl(ctx):
-    out = ctx.actions.declare_file(ctx.label.name + ".sh")
-    ctx.actions.write(
-        out,
-        ctx.attr.command.format(
-            dvcfg = ctx.toolchains[":toolchain_type"].cfg6.cli,
-            project = ctx.attr.dvjson,
-            bsw_pkg = ctx.attr.bsw_pkg,
-            **{ key: _rlocation(ctx, target) for key, target in ctx.attr.inputs.items() }
-        ),
-        is_executable = True
-    )
-    return [DefaultInfo(executable = out, runfiles = ctx.runfiles(files = [ctx.file.upstream] + [file for target in ctx.attr.inputs.values() for file in target[DefaultInfo].files.to_list()]))]
-
-run_script = rule(
-    doc = "Internal rule for running DaVinci Configurator Classic Version 6 on a DaVinci project.",
-    attrs = dict(
-        _STD_CLI_ATTRS,
-        command = attr.string(doc = "Command to run on the project (see [run_shell](https://bazel.build/rules/lib/builtins/actions#run_shell.command)). Use `{dvcfg}` for the DaVinci Configurator Classic CLI executable, `{project}` for the .dvjson file and `{bsw_pkg}` for the BSW package folder.", mandatory = True),
-        inputs = attr.string_keyed_label_dict(doc = 'Input files (see [run_shell](https://bazel.build/rules/lib/builtins/actions#run_shell.inputs)). Use `{key}` to access file `input["key"]` in `command`.', allow_files = True),
-    ),
-    implementation = _run_script_impl,
-    toolchains = [":toolchain_type"]
 )
 
 def _validation_report_impl(ctx):
@@ -974,50 +799,6 @@ validation_report = rule(
     attrs = _UPSTREAM_ATTR,
     implementation = _validation_report_impl,
     toolchains = [":toolchain_type"]
-)
-
-def _view_result_script_impl(ctx):
-    out = ctx.actions.declare_file(ctx.label.name + "/" + ctx.label.name + ".sh")
-    ctx.actions.write(
-        out,
-        "{unpack} && {open}".format(
-            unpack = ctx.toolchains[":toolchain_type"].archive.unpack.format(archive = _rlocation(ctx, ctx.attr.upstream), folder = "upstream"),
-            open = _format_command(ctx, "upstream", ctx.toolchains[":toolchain_type"].cfg6.gui_template)
-        ),
-        is_executable = True
-    )
-    return [DefaultInfo(executable = out, runfiles = ctx.runfiles(files = [ctx.file.upstream]))]
-
-view_result_script = rule(
-    doc = "Internal rule for viewing the result of a `pipeline_step` in DaVinci Configurator Classic Version 6 GUI tool.",
-    attrs = _UPSTREAM_ATTR,
-    implementation = _view_result_script_impl,
-    toolchains = [":toolchain_type"]
-)
-
-def _pipeline_step_impl(name, upstream, **kwargs):
-    dvcfg_cli_step(
-        name = name,
-        upstream = upstream,
-        **kwargs
-    )
-    script_name = name + "_view_script"
-    view_result_script(
-        name = script_name,
-        upstream = name,
-        tags = ["no-ide"]
-    )
-    sh_binary(
-        name = name + "_view_result",
-        srcs = [script_name],
-        use_bash_launcher = True,
-        tags = ["no-ide"]
-    )
-
-pipeline_step = macro(
-    doc = "Macro for running a generic CLI command on a DaVinci project. The macro automatically adds target `<name>_view_result` for viewing the result in DaVinci Configurator Classic Version 6 GUI tool.",
-    inherit_attrs = dvcfg_cli_step,
-    implementation = _pipeline_step_impl
 )
 
 def _create_project_script_impl(ctx):
@@ -1414,7 +1195,8 @@ def _apply_command_command_impl(ctx):
 apply_command = rule(
     doc = """Extend a project by running a command on it. E.g.:
 
-- `"{dvcfg}" project generate -b "{bsw_pkg}" -p "{dvjson}"` generates the BSW code. [project_folder](#project_folder) with `path = "Output/Source/GenData"` returns the generation result.
+- `"{dvcfg}" project validate -p "{dvjson}" -b "{bsw_pkg}" --fail-on NONE` creates a validation report. [project_file](#project_file) with `path = "Output/Log/ValidationOutput.json"` yields the report.
+- `"{dvcfg}" project generate -b "{bsw_pkg}" -p "{dvjson}"` generates the BSW code. [project_folder](#project_folder) with `path = "Output/Source/GenData"` yields the generation result.
 - `"{dvcfg}" automation run -b "{bsw_pkg}" -p "{dvjson"} -l "{jar}" -t MyTask` runs a PAI script (see `inputs` on how to provide the `jar` location).""",
     attrs = _PROJECT | _COMMAND_ATTRS,
     implementation = _apply_command_command_impl,
@@ -1453,6 +1235,7 @@ def _run_command_impl(name, project, command, inputs, **kwargs):
 run_command = macro(
     doc = """Run a command on a project. When running on an hybrid project, the result is written back to the workspace. E.g.:
 
+- `"{dvcfg}" project validate -p "{dvjson}" -b "{bsw_pkg}" --fail-on NONE` creates a validation report.
 - `"{dvcfg}" project generate -b "{bsw_pkg}" -p "{dvjson}"` generates the BSW code.
 - `"{dvcfg}" automation run -b "{bsw_pkg}" -p "{dvjson"} -l "{jar}" -t MyTask` runs a PAI script (see `inputs` on how to provide the `jar` location).""",
     inherit_attrs = run_command_script,
