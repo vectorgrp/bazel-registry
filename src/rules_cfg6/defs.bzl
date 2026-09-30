@@ -37,10 +37,10 @@ load(":rules.bzl",
     _project_file = "project_file",
     _apply_command = "apply_command",
     _apply = "apply",
-    _existing_project = "existing_project",
-    _new_project = "new_project",
+    _hybrid = "hybrid",
+    _from_scratch = "from_scratch",
     _expand_file_paths = "expand_file_paths",
-    _run_command = "run_command"
+    _run_command = "run_command",
 )
 
 cfg6_archive = _cfg6_archive
@@ -77,7 +77,7 @@ project_folder = _project_folder
 project_file = _project_file
 apply_command = _apply_command
 apply = _apply
-existing_project = _existing_project
-new_project = _new_project
+hybrid = _hybrid
+from_scratch = _from_scratch
 expand_file_paths = _expand_file_paths
 run_command = _run_command
