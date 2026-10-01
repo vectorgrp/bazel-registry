@@ -1,5 +1,4 @@
 load("@rules_cfg6//:defs.bzl",
-    "as_code_eac",
     _script_jar = "script_jar",
     _app_design = "app_design",
     _extract_evs = "extract_evs",
@@ -58,32 +57,20 @@ merged_arxml = macro(
     implementation = lambda **kwargs: _merged_arxml(pai_version = "CFG6_PAI_VERSION", pai = Label(":pai_neverlink"), **kwargs)
 )
 
-def _eac_jar_impl(name, plugins, arg, **kwargs):
-    jar_name = name + "_jar"
+def _eac_jar_impl(name, plugins, **kwargs):
     script_jar(
-        name = jar_name,
+        name = name,
         plugins = plugins + [Label(":eac_annotation_processor")],
         script_classes = ["com.vector.eac.EaC"],
         **kwargs
     )
-    as_code_eac(
-        name = name,
-        jar = native.package_relative_label(jar_name),
-        arg = arg,
-        visibility = ["//visibility:public"]
-    )
 
 eac_jar = macro(
-    doc = """Macro for setting up an EaC project providing the following targets:
-
-- `<name>` to apply it to a project.
-- `<name>_jar` to build the .jar file.
-- `<name>_dbg` to run/debug the code in the IDE.""",
+    doc = "Macro for setting up an EaC .jar",
     inherit_attrs = script_jar,
     attrs = {
         "script_classes": None,
         "plugins": attr.label_list(doc = "[Inherited rule attribute](https://bazel.build/reference/be/java#java_library)", configurable = False),
-        "arg": attr.label(doc = 'Optional argument. Use rule `load("@rules_cfg6//:defs.bazl", "as_code_arg")` to define the argument.')
     },
     implementation = _eac_jar_impl
 )
