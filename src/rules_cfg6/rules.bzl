@@ -12,9 +12,18 @@ def encode_eac_arg(arg):
         arg: the argument passed to the code as JSON (using `json.encode`).
 
     Returns:
-        a string containing the JSON-encoded argument. Insert this in the command line running the code directly after (no spaces) the path to the .jar file.
+        a string containing the JSON-encoded argument.
+        Insert this in the command line running the code directly after (no spaces) the path to the .jar file. E.g.:
+        ```
+        apply_command(
+            name = "as_code",
+            project = ":predecessor",
+            command = "{dvcfg} eac {-b} {-p} {-c}" + encode_eac_arg({ "my": "arg" }),
+            inputs = { "-c": ":jar" },
+        )
+        ```
     """
-    return "//" + json.encode(json.encode(arg)).replace("{", "{{").replace("}", "}}")
+    return "//" + json.encode(json.encode(arg)).replace("{", "{{").replace("}", "}}").replace("{{{{", "{").replace("}}}}", "}")
 
 def default_http_archive_attrs(archive_name, *mutex_attrs):
     return {
@@ -727,11 +736,8 @@ Usually a `hybrid` target is extended using [apply_command](#apply_command).
 If the project folder contains files, that are modified through different tools,
 these files should be listed as inputs of the `apply_command` target that needs to re-run after the modification.
 
-Typically, this is the `project update` command. E.g., if your workflow requires modifying user ECUC files
-(in `./Config/EcuConfig`) through some other tool (e.g. text editor), `project update` usually needs to be re-executed
-after such a modification.
-
-To achieve this, capture all relevant files in some label and list them as an input to the command:
+Typically, this is the `project update` command. I.e., if your workflow requires modifying user ECUC files
+(in `./Config/EcuConfig`) through some other tool capture all relevant files in some label and list them as an input to the command:
 
 ```starlark
 filegroup(name = "user_ecuc", srcs = glob(["Config/EcuConfig/**"]), visibility = ["//visibility:public"])
@@ -815,25 +821,22 @@ apply_command = rule(
 
 def _run_command_script_impl(ctx):
     p = ctx.attr.project[DvProjectProvider]
-    cmd = ctx.attr.command
-    copy = ""
-    if p and hasattr(p, "hybrid"):
-        project_folder = "$BUILD_WORKSPACE_DIRECTORY/{}".format(p.hybrid)
-        hybrid = "\ntar --force-local --exclude '*.~lock' -cf - -C '{{project_dir}}' . | tar --force-local -xf - -C \"{}\"".format(project_folder)
-        cmd = cmd.replace("#HYBRID", hybrid)
-        if cmd == ctx.attr.command:
-            cmd += hybrid
-        else:
-            copy = 'cp -r "{}/." \'{{project_dir}}\'\n'.format(project_folder)
     cli = ctx.toolchains[":toolchain_type"].cfg6.cli
+    cmd = ctx.attr.command
+    dvjson = ctx.label.name + "/_/" + p.dvjson
     dict = {
         "_upstream_": ctx.attr.project,
         "_parent_dir_": ctx.label.name,
         "project_dir": ctx.label.name + "/_",
         "dvcfg": cli
-    } | ({ "-b": p.bsw_pkg, "-p": "-p '{}'".format(ctx.label.name + "/_/" + p.dvjson) } if p else {})
-    dict = _check_keys(dict, ctx.attr.inputs)
-    script = _script(ctx, ctx.label.name + "/script.sh", _PREPARE_FOLDER + copy + _UNTAR + cmd, False, dict)
+    }
+    if p and hasattr(p, "hybrid"):
+        hybrid_dir = "$BUILD_WORKSPACE_DIRECTORY/{}".format(p.hybrid)
+        dict = dict | { "hybrid_dir": hybrid_dir }
+        cmd = 'cp -r "{project_dir}/." "{hybrid_dir}"\n' + cmd.replace("{project_dir}", "{hybrid_dir}")
+        dvjson = hybrid_dir + "/" + p.dvjson
+    dict = _check_keys(dict | { "-b": p.bsw_pkg, "-p": '-p "{}"'.format(dvjson) }, ctx.attr.inputs)
+    script = _script(ctx, ctx.label.name + "/script.sh", _PREPARE_FOLDER + _UNTAR + cmd, False, dict)
     return [DefaultInfo(executable = script, runfiles = ctx.runfiles(files = _input_files(dict)).merge(cli[DefaultInfo].default_runfiles))]
 
 run_command_script = rule(
@@ -908,34 +911,7 @@ project_folder = rule(
 )
 
 def _open_impl(evo1, **kwargs):
-    run_command(
-        command = ("'" + evo1 + "'" if evo1 else '{dvcfg} project start') + ''' {-b} {-p}
-CORE_PID=$({dvcfg} status)
-CORE_PID="${{CORE_PID//\\\\//}}"
-CORE_PID=$(grep '{project_dir}' <<< "$CORE_PID")
-CORE_PID=$(grep -oE '^[0-9]+' <<< "$CORE_PID")
-_is_running() {{
-  if [[ $OSTYPE == msys* || $OSTYPE == cygwin* ]]; then
-    tasklist //FI "PID eq $CORE_PID" //NH 2>/dev/null | grep -qw "$CORE_PID"
-  else
-    kill -0 "$CORE_PID" 2>/dev/null
-  fi
-}}
-_term() {{
-  if [[ $OSTYPE == msys* || $OSTYPE == cygwin* ]]; then
-    taskkill //PID "$CORE_PID" //T //F >/dev/null
-  else
-    kill "$CORE_PID" 2>/dev/null
-  fi#HYBRID
-}}
-trap _term SIGINT
-while _is_running; do
-  sleep 2 &
-  wait "$!"
-done
-''',
-        **kwargs
-    )
+    run_command(command = ("'" + evo1 + "'" if evo1 else "{dvcfg} project start") + " {-b} {-p}\necho 'Project has been opened in DaVinci Configurator Classic Version 6.'\nread -n 1 -s -r -p 'Press any key to continue...'\necho", **kwargs)
 
 open = macro(
     doc = "Open a project in DaVinci Configurator Classic Version 6.",
@@ -967,34 +943,33 @@ diff = rule(
     toolchains = [":toolchain_type"]
 )
 
-def _dev_impl(jar, arg, **kwargs):
-    if arg and not jar:
-        fail("Provided a command line argument but no code.")
+def _eac_dev_impl(jar, arg, tags, **kwargs):
     run_command(
         command = '''export DVCFG_JVM_ARGS='-agentlib:jdwp=transport=dt_socket,server=y,suspend=n -Djdk.attach.allowAttachSelf=true'
-export DVCFG_TIMEOUT=-1
+export DVCFG_TIMEOUT=300
 export DVCFG_BUILD_SYSTEM_PATH="$BUILD_WORKSPACE_DIRECTORY"
-IDE_INTEGRATION=" --ide-integration-port ${{EAC_IDE_PORT--2 --no-undo}}"
-if [[ "${{EAC_DEBUG-}}" == "true" ]]; then
-    IDE_INTEGRATION+=" --debug"
+REST=''
+if [[ "${{EAC_SPAWN-}}" != 'true' ]]; then
+    REST+=" {-c}"''' + arg + '''
 fi
-_term() {{
-    kill $child 2>/dev/null
-}}
-trap _term SIGINT
-{dvcfg} eac {-b} {-p}''' + ((" {-c}" + arg) if jar else "") + '''$IDE_INTEGRATION &
-child=$!
-wait $child''',
-        inputs = { "-c": jar } if jar else {},
+REST+=" --ide-integration-port ${{EAC_IDE_PORT--2 --no-undo}}"
+if [[ "${{EAC_DEBUG-}}" == 'true' ]]; then
+    REST+=' --debug'
+fi
+{dvcfg} eac {-b} {-p}$REST
+''',
+        inputs = { "-c": jar },
+        tags = tags + ["EAC_SPAWN"],
         **kwargs
     )
 
-dev = macro(
+eac_dev = macro(
     doc = "Run/Debug EaC in an IDE.",
     attrs = {
         "project": attr.label(doc = "The project on wich to run/debug the code.", mandatory = True),
-        "jar": attr.label(doc = "EaC .jar file to run/debug.", configurable = False),
-        "arg": attr.string(doc = "Optional command line argument to call the code with (use [encode_eac_arg](#encode_eac_arg)).", configurable = False)
+        "jar": attr.label(doc = "EaC .jar file to run/debug.", mandatory = True, configurable = False),
+        "arg": attr.string(doc = "Optional command line argument to call the code with (use [encode_eac_arg](#encode_eac_arg)).", configurable = False),
+        "tags": attr.string_list(configurable = False)
     },
-    implementation = _dev_impl
+    implementation = _eac_dev_impl
 )
