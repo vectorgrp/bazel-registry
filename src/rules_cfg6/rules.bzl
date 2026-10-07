@@ -875,6 +875,9 @@ run_command = macro(
 
 Use `$BUILD_WORKSPACE_DIRECTORY` to specify locations relative to the workspace.""",
     inherit_attrs = run_command_script,
+    attrs = {
+        "env": attr.string_dict(doc = "Optional environment variables.")
+    },
     implementation = _run_command_impl
 )
 
@@ -943,8 +946,7 @@ list_project_files = macro(
     implementation = _list_project_files_impl
 )
 
-def _copy_files_script_impl(ctx):
-    cmd = """_copy() {{
+_COPY = """_copy() {{
   local dst="$2"
   if [[ "$dst" == */ ]]; then
     dst="$dst$(basename "$1")"
@@ -957,8 +959,11 @@ def _copy_files_script_impl(ctx):
     cp "$1" "$dst"
   fi
 }}"""
+
+def _copy_files_script_impl(ctx):
+    cmd = _COPY
     for name, value in ctx.attr.env.items():
-        cmd += '\n{}="{}"'.format(name, value)
+        cmd += '\n{}="{}"'.format(name, value.replace('"', '\\"'))
     dict = {}
     i = 0
     for target, dst in ctx.attr.from_to.items():
@@ -1059,7 +1064,10 @@ if [[ "${{EAC_DEBUG-}}" == 'true' ]]; then
     REST+=' --debug'
 fi
 {dvcfg} eac {-b} {-p}$REST
-''',
+''' + _COPY + '''
+if [[ "${{EAC_SPAWN-}}" != 'true' ]]; then
+    _copy "{project_dir}/Output/Log/EaC" "$BUILD_WORKSPACE_DIRECTORY/.eac-run-artifacts/$(date '+%Y-%m-%d_%H-%M-%S')"
+fi''',
         inputs = { "-c": jar },
         tags = tags + ["EAC_SPAWN"],
         **kwargs
@@ -1067,11 +1075,13 @@ fi
 
 eac_dev = macro(
     doc = "Run/Debug EaC in an IDE.",
+    inherit_attrs = run_command,
     attrs = {
-        "project": attr.label(doc = "The project on wich to run/debug the code.", allow_single_file = True, mandatory = True),
         "jar": attr.label(doc = "EaC .jar file to run/debug.", mandatory = True, configurable = False),
         "arg": attr.string(doc = "Optional command line argument to call the code with (use [encode_eac_arg](#encode_eac_arg)).", configurable = False),
-        "tags": attr.string_list(configurable = False)
+        "tags": attr.string_list(configurable = False),
+        "command": None,
+        "inputs": None
     },
     implementation = _eac_dev_impl
 )
