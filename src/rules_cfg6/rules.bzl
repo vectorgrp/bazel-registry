@@ -963,9 +963,9 @@ def _copy_files_script_impl(ctx):
         dst = dst.replace("\\", "/")
         if not dst.endswith("/") and len(target[DefaultInfo].files.to_list()) != 1:
             fail("Expected exactly one file/folder from {} for destination '{}' but got {} (use a trailing '/' to copy into a folder).".format(target.label, dst, len(target[DefaultInfo].files.to_list())))
-        source = "src_" + i
+        source = "src_" + str(i)
         i += 1
-        dict.update(source, target)
+        dict.update([(source, target)])
         cmd += '_copy {{{}}} {}\n'.format(source, ("'{}'" if _is_absolute(dst) else '"$BUILD_WORKSPACE_DIRECTORY/{}"').format(dst))
     script = _script(ctx, ctx.label.name + ".sh", cmd, False, dict)
     return [DefaultInfo(executable = script, runfiles = ctx.runfiles(files = _input_files(dict)))]
@@ -1006,6 +1006,9 @@ def _copy_files_impl(name, from_to, **kwargs):
 copy_files = macro(
     doc = "Copy files/folders (e.g. build results) to the workspace or any other location.",
     inherit_attrs = copy_files_script,
+    attrs = {
+        "env": attr.string_dict(doc = "Optional environment variables.")
+    },
     implementation = _copy_files_impl
 )
 
