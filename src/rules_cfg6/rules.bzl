@@ -957,6 +957,8 @@ def _copy_files_script_impl(ctx):
     cp "$1" "$dst"
   fi
 }}"""
+    for name, value in ctx.attr.env.items():
+        cmd += '\n{}="{}"'.format(name, value)
     dict = {}
     i = 0
     for target, dst in ctx.attr.from_to.items():
@@ -966,7 +968,7 @@ def _copy_files_script_impl(ctx):
         source = "src_" + str(i)
         i += 1
         dict.update([(source, target)])
-        cmd += '_copy {{{}}} {}\n'.format(source, ("'{}'" if _is_absolute(dst) else '"$BUILD_WORKSPACE_DIRECTORY/{}"').format(dst))
+        cmd += '\n_copy {{{}}} {}'.format(source, ("'{}'" if _is_absolute(dst) else '"$BUILD_WORKSPACE_DIRECTORY/{}"').format(dst))
     script = _script(ctx, ctx.label.name + ".sh", cmd, False, dict)
     return [DefaultInfo(executable = script, runfiles = ctx.runfiles(files = _input_files(dict)))]
 
@@ -985,16 +987,18 @@ files = {
 
 - A destination ending with `/` denotes a folder to copy into, otherwise the path of the file/folder to create (requires the label to provide a single file/folder).
 - Relative destinations are resolved relative to the workspace root.
-- Existing destination files are overwritten, existing destination folders are merged.""", allow_files = True, allow_empty = False, mandatory = True)
+- Existing destination files are overwritten, existing destination folders are merged.""", allow_files = True, allow_empty = False, mandatory = True),
+        "env": attr.string_dict(doc = "Optional environment variables.")
     },
     implementation = _copy_files_script_impl
 )
 
-def _copy_files_impl(name, from_to, **kwargs):
+def _copy_files_impl(name, from_to, env, **kwargs):
     script_name = name + "_script"
     copy_files_script(
         name = script_name,
-        from_to = from_to
+        from_to = from_to,
+        env = env
     )
     sh_binary(
         name = name,
@@ -1006,9 +1010,6 @@ def _copy_files_impl(name, from_to, **kwargs):
 copy_files = macro(
     doc = "Copy files/folders (e.g. build results) to the workspace or any other location.",
     inherit_attrs = copy_files_script,
-    attrs = {
-        "env": attr.string_dict(doc = "Optional environment variables.")
-    },
     implementation = _copy_files_impl
 )
 
