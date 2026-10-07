@@ -17,7 +17,7 @@ def encode_eac_arg(arg):
         ```
         apply_command(
             name = "as_code",
-            project = ":predecessor",
+            project = ":upstream",
             command = "{dvcfg} eac {-b} {-p} {-c}" + encode_eac_arg({ "my": "arg" }),
             inputs = { "-c": ":jar" },
         )
@@ -58,8 +58,11 @@ def single_file_from_target(target):
 def get_bash(repository_ctx):
     return repository_ctx.getenv("BAZEL_SH", "bash")
 
+def _is_absolute(s):
+    return s.startswith("/") or s.startswith("\\") or (len(s) > 2 and s[1] == ":" and (s[2] == "/" or s[2] == "\\"))
+
 def absolute_path(repository_ctx, s):
-    return repository_ctx.path(s) if s.startswith("/") or s.startswith("\\") or (len(s) > 2 and s[1] == ":" and (s[2] == "/" or s[2] == "\\")) else repository_ctx.path(str(repository_ctx.workspace_root) + "/" + s)
+    return repository_ctx.path(s) if _is_absolute(s) else repository_ctx.path(str(repository_ctx.workspace_root) + "/" + s)
 
 Cfg6ToolProvider = provider()
 
@@ -655,12 +658,10 @@ def _from_scratch_impl(ctx):
     cmd = _PREPARE_FOLDER + "{dvcfg} project create {-b} --project-name {name} -o '{project_dir}'"
     dict = { "_parent_dir_": out.dirname, "project_dir": out.dirname + "/_", "dvcfg": cfg6.cli, "-b": ctx.attr.bsw_pkg, "name": ctx.label.name }
     if ctx.attr.settings:
-        cmd += '\n"{patcher}" "{folder}/_/{name}.dvjson" "{settings}"'
+        cmd += "\n'{patcher}' '{project_dir}/{name}.dvjson' {settings}"
         dict.update(patcher = cfg6.settings_patcher.executable.path, settings = ctx.attr.settings)
     script = _script(ctx, ctx.label.name + "/script.sh", cmd + _TAR, True, dict)
-    if ctx.attr.settings:
-        script["tools"].append(cfg6.settings_patcher)
-    ctx.actions.run_shell(outputs = [out], inputs = _input_files(dict), tools = _files(cfg6.cli) + [script] + ([cfg6.settings_patcher.executable] if ctx.attr.settings else []), command = "./" + script.path, use_default_shell_env = True, env = _exclusive_label(ctx))
+    ctx.actions.run_shell(outputs = [out], inputs = _input_files(dict), tools = _files(cfg6.cli) + [script] + ([cfg6.settings_patcher] if ctx.attr.settings else []), command = "./" + script.path, use_default_shell_env = True, env = _exclusive_label(ctx))
     return [DefaultInfo(files = depset([out])), DvProjectProvider(dvjson = ctx.label.name + ".dvjson", bsw_pkg = ctx.attr.bsw_pkg)]
 
 from_scratch = rule(
@@ -800,7 +801,7 @@ def _apply_command_impl(ctx):
     hybrid = "cp -r '{}/.' '{{project_dir}}'\n".format(p.hybrid) if _is_hybrid_update(ctx) else ""
     dict = _check_keys(_apply_dict(ctx, out, ctx.attr.project), ctx.attr.inputs)
     script = _script(ctx, ctx.label.name + "/script.sh", _PREPARE_FOLDER + hybrid + _UNTAR + ctx.attr.command + _STOP + _TAR, True, dict)
-    ctx.actions.run_shell(outputs = [out], inputs = _input_files(dict), tools = _files(ctx.toolchains[":toolchain_type"].cfg6.cli) + [script], command = "./" + script.path, use_default_shell_env = True)
+    ctx.actions.run_shell(outputs = [out], inputs = _input_files(dict), tools = _files(ctx.toolchains[":toolchain_type"].cfg6.cli) + [script], command = "./" + script.path, env = ctx.attr.env, use_default_shell_env = True)
     return [DefaultInfo(files = depset([out])), p]
 
 apply_command = rule(
@@ -814,7 +815,10 @@ apply_command = rule(
 - `{dvcfg} export run {-b} {-p} -o "{project_dir}" -e everything` exports the entire AUTOSAR model. [project_file](#project_file) with `path = "Exported_everything.arxml"` yields the result.
 
 `{project_dir}` is expanded to the project folder (unquoted; useful for specifying output locations).""",
-    attrs = { "project": attr.label(doc = "The project to which to apply the command.", allow_single_file = True, providers = [DvProjectProvider], mandatory = True) } | _COMMAND_ATTRS,
+    attrs = {
+        "project": attr.label(doc = "The project to which to apply the command.", allow_single_file = True, providers = [DvProjectProvider], mandatory = True),
+        "env": attr.string_dict(doc = "Optional environment variables.")
+    } | _COMMAND_ATTRS,
     implementation = _apply_command_impl,
     toolchains = [":toolchain_type"]
 )
@@ -910,13 +914,108 @@ project_folder = rule(
     implementation = _project_folder_impl
 )
 
+def _list_project_files_script_impl(ctx):
+    dict = { "project": ctx.attr.project }
+    script = _script(ctx, ctx.label.name + ".sh", "tar --force-local -tzf {project} | sed -e '/\\/$/d' -e 's|^\\./||'", False, dict)
+    return [DefaultInfo(executable = script, runfiles = ctx.runfiles(files = _input_files(dict)))]
+
+list_project_files_script = rule(
+    attrs = { "project": attr.label(doc = "The project whose files to list.", allow_single_file = True, mandatory = True) },
+    implementation = _list_project_files_script_impl
+)
+
+def _list_project_files_impl(name, project, **kwargs):
+    script_name = name + "_script"
+    list_project_files_script(
+        name = script_name,
+        project = project
+    )
+    sh_binary(
+        name = name,
+        srcs = [script_name],
+        use_bash_launcher = True,
+        **kwargs
+    )
+
+list_project_files = macro(
+    doc = "List all files contained in a project (paths relative to the project folder, usable as `path` in [project_file](#project_file)). Run with `bazel run`.",
+    inherit_attrs = list_project_files_script,
+    implementation = _list_project_files_impl
+)
+
+def _copy_files_script_impl(ctx):
+    cmd = """_copy() {{
+  local dst="$2"
+  if [[ "$dst" == */ ]]; then
+    dst="$dst$(basename "$1")"
+  fi
+  if [[ -d "$1" ]]; then
+    mkdir -p "$dst"
+    cp -R "$1/." "$dst"
+  else
+    mkdir -p "$(dirname "$dst")"
+    cp "$1" "$dst"
+  fi
+}}"""
+    dict = {}
+    i = 0
+    for target, dst in ctx.attr.from_to.items():
+        dst = dst.replace("\\", "/")
+        if not dst.endswith("/") and len(target[DefaultInfo].files.to_list()) != 1:
+            fail("Expected exactly one file/folder from {} for destination '{}' but got {} (use a trailing '/' to copy into a folder).".format(target.label, dst, len(target[DefaultInfo].files.to_list())))
+        source = "src_" + i
+        i += 1
+        dict.update(source, target)
+        cmd += '_copy {{{}}} {}\n'.format(source, ("'{}'" if _is_absolute(dst) else '"$BUILD_WORKSPACE_DIRECTORY/{}"').format(dst))
+    script = _script(ctx, ctx.label.name + ".sh", cmd, False, dict)
+    return [DefaultInfo(executable = script, runfiles = ctx.runfiles(files = _input_files(dict)))]
+
+copy_files_script = rule(
+    attrs = {
+        "from_to": attr.label_keyed_string_dict(doc = """Files/folders to copy (label -> destination). E.g.:
+
+```starlark
+files = {
+    ":file": "destination/file.txt",        # file -> to given path
+    ":file": "destination/",                # file -> into given folder
+    ":folder": "destination/",              # folder -> into given folder (yields gen/<folder name>)
+    ":folder": "destination",               # folder -> to given path
+}
+```
+
+- A destination ending with `/` denotes a folder to copy into, otherwise the path of the file/folder to create (requires the label to provide a single file/folder).
+- Relative destinations are resolved relative to the workspace root.
+- Existing destination files are overwritten, existing destination folders are merged.""", allow_files = True, allow_empty = False, mandatory = True)
+    },
+    implementation = _copy_files_script_impl
+)
+
+def _copy_files_impl(name, from_to, **kwargs):
+    script_name = name + "_script"
+    copy_files_script(
+        name = script_name,
+        from_to = from_to
+    )
+    sh_binary(
+        name = name,
+        srcs = [script_name],
+        use_bash_launcher = True,
+        **kwargs
+    )
+
+copy_files = macro(
+    doc = "Copy files/folders (e.g. build results) to the workspace or any other location.",
+    inherit_attrs = copy_files_script,
+    implementation = _copy_files_impl
+)
+
 def _open_impl(evo1, **kwargs):
     run_command(command = ("'" + evo1 + "'" if evo1 else "{dvcfg} project start") + " {-b} {-p}\necho 'Project has been opened in DaVinci Configurator Classic Version 6.'\nread -n 1 -s -r -p 'Press any key to continue...'\necho", **kwargs)
 
 open = macro(
     doc = "Open a project in DaVinci Configurator Classic Version 6.",
     attrs = {
-        "project": attr.label(doc = "The project to open.", mandatory = True),
+        "project": attr.label(doc = "The project to open.", allow_single_file = True, mandatory = True),
         "evo1": attr.string(doc = "Optional absolute path to a DaVinci Configurator Classic Version 6 Evo1 GUI launcher.", configurable = False)
     },
     implementation = _open_impl
@@ -947,7 +1046,6 @@ def _eac_dev_impl(jar, arg, tags, **kwargs):
     run_command(
         command = '''export DVCFG_JVM_ARGS='-agentlib:jdwp=transport=dt_socket,server=y,suspend=n -Djdk.attach.allowAttachSelf=true'
 export DVCFG_TIMEOUT=300
-export DVCFG_BUILD_SYSTEM_PATH="$BUILD_WORKSPACE_DIRECTORY"
 REST=''
 if [[ "${{EAC_SPAWN-}}" != 'true' ]]; then
     REST+=" {-c}"''' + arg + '''
@@ -966,7 +1064,7 @@ fi
 eac_dev = macro(
     doc = "Run/Debug EaC in an IDE.",
     attrs = {
-        "project": attr.label(doc = "The project on wich to run/debug the code.", mandatory = True),
+        "project": attr.label(doc = "The project on wich to run/debug the code.", allow_single_file = True, mandatory = True),
         "jar": attr.label(doc = "EaC .jar file to run/debug.", mandatory = True, configurable = False),
         "arg": attr.string(doc = "Optional command line argument to call the code with (use [encode_eac_arg](#encode_eac_arg)).", configurable = False),
         "tags": attr.string_list(configurable = False)

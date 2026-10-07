@@ -27,6 +27,8 @@ load(":rules.bzl",
     _from_scratch = "from_scratch",
     _expand_file_paths = "expand_file_paths",
     _run_command = "run_command",
+    _copy_files = "copy_files",
+    _list_project_files = "list_project_files",
     _encode_eac_arg = "encode_eac_arg",
     _diff = "diff"
 )
@@ -55,5 +57,7 @@ hybrid = _hybrid
 from_scratch = _from_scratch
 expand_file_paths = _expand_file_paths
 run_command = _run_command
+copy_files = _copy_files
+list_project_files = _list_project_files
 encode_eac_arg = _encode_eac_arg
 diff = _diff

@@ -204,51 +204,6 @@
   },
   "selectedYankedVersions": {},
   "moduleExtensions": {
-    "//src/rules_ecu_config:ecu_config.bzl%ecu_config": {
-      "general": {
-        "bzlTransitiveDigest": "Iju+r6OXZRRKJVpHVc9JN8FrmGP/DW8J9IcPQJfyOiE=",
-        "usagesDigest": "amg/eR66UtBdDxS4V33QhAcyZcwQjGrx3g2oz1deHEE=",
-        "recordedInputs": [
-          "REPO_MAPPING:,cfg6 +cfg6_archive+cfg6",
-          "REPO_MAPPING:,rules_cfg6 +local_repository+rules_cfg6",
-          "REPO_MAPPING:+local_repository+rules_cfg6,rules_java rules_java+",
-          "REPO_MAPPING:+local_repository+rules_cfg6,rules_shell rules_shell+",
-          "REPO_MAPPING:bazel_features+,bazel_features_globals bazel_features++version_extension+bazel_features_globals",
-          "REPO_MAPPING:bazel_features+,bazel_features_version bazel_features++version_extension+bazel_features_version",
-          "REPO_MAPPING:protobuf+,proto_bazel_features bazel_features+",
-          "REPO_MAPPING:protobuf+,rules_java rules_java+",
-          "REPO_MAPPING:rules_cc+,bazel_skylib bazel_skylib+",
-          "REPO_MAPPING:rules_cc+,bazel_tools bazel_tools",
-          "REPO_MAPPING:rules_cc+,cc_compatibility_proxy rules_cc++compatibility_proxy+cc_compatibility_proxy",
-          "REPO_MAPPING:rules_cc+,platforms platforms",
-          "REPO_MAPPING:rules_cc+,rules_cc rules_cc+",
-          "REPO_MAPPING:rules_cc++compatibility_proxy+cc_compatibility_proxy,rules_cc rules_cc+",
-          "REPO_MAPPING:rules_java+,bazel_features bazel_features+",
-          "REPO_MAPPING:rules_java+,bazel_skylib bazel_skylib+",
-          "REPO_MAPPING:rules_java+,bazel_tools bazel_tools",
-          "REPO_MAPPING:rules_java+,com_google_protobuf protobuf+",
-          "REPO_MAPPING:rules_java+,compatibility_proxy rules_java++compatibility_proxy+compatibility_proxy",
-          "REPO_MAPPING:rules_java+,rules_cc rules_cc+",
-          "REPO_MAPPING:rules_java++compatibility_proxy+compatibility_proxy,rules_java rules_java+"
-        ],
-        "generatedRepoSpecs": {
-          "MyProject": {
-            "repoRuleId": "@@//src/rules_ecu_config:rules.bzl%ecu_config_repo",
-            "attributes": {
-              "cfg6_defs": "@@+cfg6_archive+cfg6//:defs.bzl",
-              "bsw_pkg": "@@//:build/davinci/bsw",
-              "settings_patch_substitutions": {},
-              "evs": [],
-              "extract": [],
-              "modules": [],
-              "diag_modules": [],
-              "update_switches": "",
-              "as_code": []
-            }
-          }
-        }
-      }
-    },
     "@@rules_kotlin+//src/main/starlark/core/repositories:bzlmod_setup.bzl%rules_kotlin_extensions": {
       "general": {
         "bzlTransitiveDigest": "+Kp6j204mBZ3mxlIDDR0gBoP45BZ4jYRhRAcB8sU0qc=",
