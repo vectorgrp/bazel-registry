@@ -1,27 +1,16 @@
-load("@rules_java//java:defs.bzl", "java_import", "java_plugin", "java_library")
+load("@rules_java//java:defs.bzl", "java_import", "java_plugin", "java_library", "java_binary")
 load("@rules_cfg6//:defs.bzl", "cfg6_toolchain")
 
 package(default_visibility = ["//visibility:public"])
 
 exports_files(["defs.bzl", "rules.bzl"])
 
-cfg6_toolchain(
-    name = "cfg6",
-    cli = "CLI",
-    core = "CORE",
-    xpro = "XPRO",
-    gui = "GUI",
-    gui_template = 'TEMPLATE',
-    result_file_cmd = "RESULT_FILE_CMD",
-    pack = 'COMPRESS',
-    unpack = 'UNPACK'
-)
-
-toolchain(
-    name ="toolchain",
-    toolchain = ":cfg6",
-    toolchain_type = "@rules_cfg6//:toolchain_type"
-)
+_cfg6_data = glob(["_/**"])
+filegroup(name = "cli", srcs = ["_/dvcfg.exe"], data = _cfg6_data, visibility = ["//visibility:private"])
+filegroup(name = "xpro", srcs = ["_/ecuxpro/ecuxpro.exe"], data = _cfg6_data, visibility = ["//visibility:private"])
+filegroup(name = "core", srcs = ["_/dvcfgcore/dvcfgcore.exe"], data = _cfg6_data, visibility = ["//visibility:private"])
+cfg6_toolchain(name = "cfg6", cli = ":cli", xpro = ":xpro", core = ":core", settings_patcher = ":settings_patcher")
+toolchain(name ="toolchain", toolchain = ":cfg6", toolchain_type = "@rules_cfg6//:toolchain_type")
 
 java_import(
     name = "eac_annotation_processor_deps",
@@ -31,11 +20,11 @@ java_import(
     ),
     visibility = ["//visibility:private"]
 )
-
 java_plugin(
     name = "eac_annotation_processor",
     deps = [":eac_annotation_processor_deps"],
-    processor_class = "com.vector.cfg.cac.processing.impl.CaCEntryPointProcessor"
+    processor_class = "com.vector.cfg.cac.processing.impl.CaCEntryPointProcessor",
+    visibility = ["//visibility:private"]
 )
 
 _lib_folder = "_/dvcfgpai/libs/"
@@ -68,20 +57,8 @@ _pai_beta_lib_names = [jar[len(_lib_folder):-4] for jar in _pai_jars if jar.ends
     )
     for name in _pai_beta_lib_names
 ]
-
-java_library(
-    name = "pai",
-    exports = _pai_common_lib_names + _pai_stable_lib_names
-)
-
-java_library(
-    name = "pai_beta",
-    exports = _pai_common_lib_names + _pai_beta_lib_names
-)
-
-java_library(
-    name = "pai_neverlink",
-    exports = [":pai"],
-    neverlink = True,
-    visibility = ["//visibility:private"]
-)
+java_library(name = "pai", exports = _pai_common_lib_names + _pai_stable_lib_names)
+java_library(name = "pai_beta", exports = _pai_common_lib_names + _pai_beta_lib_names)
+java_library(name = "pai_neverlink", exports = [":pai"], neverlink = True, visibility = ["//visibility:private"])
+java_import(name = "gson", jars = glob(["_/lib/gson-*.jar"]), visibility = ["//visibility:private"])
+java_binary(name = "settings_patcher", deps = [":gson"], srcs = ["@rules_cfg6//:SettingsPatcher.java"], main_class = "SettingsPatcher")

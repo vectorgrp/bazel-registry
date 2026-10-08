@@ -3,6 +3,28 @@ load("@rules_java//java:java_single_jar.bzl", "java_single_jar")
 load("@rules_java//java/common/rules:java_library.bzl", "JAVA_LIBRARY_ATTRS")
 load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 
+def encode_eac_arg(arg):
+    """JSON-encoding for EaC command line arguments.
+
+    If the code takes a command line argument use this method to obtain a correctly encoded string to use in the command line call running the code.
+
+    Args:
+        arg: the argument passed to the code as JSON (using `json.encode`).
+
+    Returns:
+        a string containing the JSON-encoded argument.
+        Insert this in the command line running the code directly after (no spaces) the path to the .jar file. E.g.:
+        ```
+        apply_command(
+            name = "as_code",
+            project = ":upstream",
+            command = "{dvcfg} eac {-b} {-p} {-c}" + encode_eac_arg({ "my": "arg" }),
+            inputs = { "-c": ":jar" },
+        )
+        ```
+    """
+    return "//" + json.encode(json.encode(arg)).replace("{", "{{").replace("}", "}}").replace("{{{{", "{").replace("}}}}", "}")
+
 def default_http_archive_attrs(archive_name, *mutex_attrs):
     return {
         "url": attr.string(doc = "URL of the {} archive.{}".format(archive_name, " Mutually exclusive with `{}`.".format("`, `".join(mutex_attrs)) if mutex_attrs else ""), mandatory = len(mutex_attrs) == 0),
@@ -36,54 +58,33 @@ def single_file_from_target(target):
 def get_bash(repository_ctx):
     return repository_ctx.getenv("BAZEL_SH", "bash")
 
+def _is_absolute(s):
+    return s.startswith("/") or s.startswith("\\") or (len(s) > 2 and s[1] == ":" and (s[2] == "/" or s[2] == "\\"))
+
 def absolute_path(repository_ctx, s):
-    return repository_ctx.path(s) if s.startswith("/") or s.startswith("\\") or (len(s) > 2 and s[1] == ":" and (s[2] == "/" or s[2] == "\\")) else repository_ctx.path(str(repository_ctx.workspace_root) + "/" + s)
+    return repository_ctx.path(s) if _is_absolute(s) else repository_ctx.path(str(repository_ctx.workspace_root) + "/" + s)
 
 Cfg6ToolProvider = provider()
 
-ArchiveToolProvider = provider()
-
-ModuleImportMergeModeProvider = provider()
-
-VariantNameProvider = provider()
-
 ScriptTaskProvider = provider()
 
-AsCodeTypeProvider = provider()
-
-AsCodeArgProvider = provider()
-
-PipelineProjectProvider = provider()
+DvProjectProvider = provider()
 
 def _cfg6_toolchain_impl(ctx):
-    return [
-        platform_common.ToolchainInfo(
-            cfg6 = Cfg6ToolProvider(
-                cli = ctx.attr.cli,
-                core = ctx.attr.core,
-                xpro = ctx.attr.xpro,
-                gui = ctx.attr.gui,
-                gui_template = ctx.attr.gui_template,
-                result_file_cmd = ctx.attr.result_file_cmd
-            ),
-            archive = ArchiveToolProvider(
-                pack = ctx.attr.pack,
-                unpack = ctx.attr.unpack
-            )
-        )
-    ]
+    return [platform_common.ToolchainInfo(cfg6 = Cfg6ToolProvider(
+        cli = ctx.attr.cli,
+        xpro = ctx.attr.xpro,
+        core = ctx.attr.core,
+        settings_patcher = ctx.attr.settings_patcher[DefaultInfo].files_to_run,
+    ))]
 
 cfg6_toolchain = rule(
     implementation = _cfg6_toolchain_impl,
     attrs = {
-        "cli": attr.string(mandatory = True),
-        "core": attr.string(mandatory = True),
-        "xpro": attr.string(mandatory = True),
-        "gui": attr.string(mandatory = True),
-        "gui_template": attr.string(mandatory = True),
-        "result_file_cmd": attr.string(mandatory = True),
-        "pack": attr.string(mandatory = True),
-        "unpack": attr.string(mandatory = True)
+        "cli": attr.label(mandatory = True),
+        "xpro": attr.label(mandatory = True),
+        "core": attr.label(mandatory = True),
+        "settings_patcher": attr.label(executable = True, mandatory = True, cfg = "exec")
     }
 )
 
@@ -102,38 +103,15 @@ def _pai_version(repository_ctx):
             return v
     fail("Failed to read PAI version from jars in {}.".format(libs_folder))
 
-def _cli(repository_ctx, ext):
-    result = repository_ctx.path("_/dvcfg" + ext)
-    return str(result if result.exists else repository_ctx.path("_/dvcfg-b" + ext))
-
-def _gui(repository_ctx, ext, cli):
-    result = repository_ctx.path("_/dvcfgui-b/dvcfgui-b" + ext)
-    return str(result) if result.exists else cli
-
 def _cfg6_repo_files(repository_ctx):
     is_windows = repository_ctx.os.name.startswith("windows")
     ext = ".exe" if is_windows else ""
-    cli = _cli(repository_ctx, ext)
-    gui = _gui(repository_ctx, ext, cli)
+    cli = repository_ctx.path("_/dvcfg" + ext)
     if is_windows:
         ret = repository_ctx.execute([get_bash(repository_ctx), "-c", '"{}" -v'.format(cli)])
         if ret.return_code != 0:
             fail("\r\nERROR: Failed to call DaVinci Configurator Classic Version 6 from bash. Please use a bash capable of windows-style paths (e.g. git bash). " + ret.stderr)
-    repository_ctx.template(
-        "BUILD.bazel",
-        Label("cfg6_BUILD_template.bzl"),
-        substitutions = {
-            "CLI": cli,
-            "CORE": str(repository_ctx.path("_/dvcfgcore/dvcfgcore" + ext)),
-            "XPRO": str(repository_ctx.path("_/ecuxpro/ecuxpro" + ext)),
-            "GUI": gui,
-            "TEMPLATE": ('"{dvcfg}" project start --project "{project}" --bsw-package "{bsw_pkg}"' if gui == cli else '"{dvcfg}" --project "{project}" --bsw-package "{bsw_pkg}"') + ' && read -srn 1 -p "Press any key to terminate..."',
-            "RESULT_FILE_CMD": 'powershell -NoP -NonI -c \\"[guid]::NewGuid().ToString() > \\"{out}\\"\\"' if is_windows else 'bash -c \\"cat /proc/sys/kernel/random/uuid > \\"{out}\\"\\"',
-            "PAI_VERSION": _pai_version(repository_ctx),
-            "COMPRESS": 'tar --force-local -zcf "{}" -C "{}" .',
-            "UNPACK": 'rm -rf "{folder}" && mkdir -p "{folder}" && tar --force-local -zxf "{archive}" -C "{folder}"'
-        }
-    )
+    repository_ctx.template("BUILD.bazel", Label("cfg6_BUILD_template.bzl"), substitutions = { ".exe": ext })
     repository_ctx.template("defs.bzl", Label("cfg6_defs_template.bzl"))
     repository_ctx.template("rules.bzl", Label("cfg6_rules_template.bzl"), substitutions = { "CFG6_PAI_VERSION": _pai_version(repository_ctx) })
     return cli
@@ -170,7 +148,7 @@ cfg6_archive = repository_rule(
 def _local_cfg6_at_path(repository_ctx, s):
     repository_ctx.symlink(absolute_path(repository_ctx, s), "_")
     cli = _cfg6_repo_files(repository_ctx)
-    repository_ctx.watch(repository_ctx.path(cli).realpath)
+    repository_ctx.watch(cli.realpath)
 
 def _local_cfg6_impl(repository_ctx):
     _local_cfg6_at_path(repository_ctx , repository_ctx.attr.path)
@@ -183,25 +161,17 @@ local_cfg6 = repository_rule(
     implementation = _local_cfg6_impl
 )
 
-def _write_script(ctx, command, targets_dict, **kwargs):
-    out = ctx.actions.declare_file(ctx.label.name + ".sh")
-    ctx.actions.write(
-        out,
-        command.format(**({ k: _rlocation(ctx, target) for k, target in targets_dict.items() } | kwargs)),
-        is_executable = True
-    )
-    return [DefaultInfo(executable = out, runfiles = ctx.runfiles(files = [file for targets in targets_dict.values() for target in (targets if type(targets) == _LIST_TYPE else [targets]) for file in target[DefaultInfo].files.to_list()]))]
+_BSW_PKG_ATTR = { "bsw_pkg": attr.label(doc = "The BSW package folder.", allow_single_file = True, mandatory = True) }
 
 def _generate_foundation_layer_script_impl(ctx):
-    includelist, substitution = (' --includelist "{filter}"', { "filter": ctx.attr.filter }) if ctx.attr.filter else ("", {})
-    return _write_script(ctx, '"{core}" -application com.vector.cfg.bswmdmgen.app.flApplication -b "{bsw_pkg}" --force -o "{output}"' + includelist,
-        { "bsw_pkg": ctx.attr.bsw_pkg, "output": ctx.attr.output } | substitution,
-        core = ctx.toolchains[":toolchain_type"].cfg6.core,
-    )
+    core = ctx.toolchains[":toolchain_type"].cfg6.core
+    includelist, substitution = (' {--includelist}', { "--includelist": ctx.attr.filter }) if ctx.attr.filter else ("", {})
+    dict = { "core": core, "-b": ctx.attr.bsw_pkg, "-o": ctx.attr.output } | substitution
+    script = _script(ctx, ctx.label.name + ".sh", '{core} -application com.vector.cfg.bswmdmgen.app.flApplication {-b} --force {-o}' + includelist, False, dict)
+    return [DefaultInfo(executable = script, runfiles = ctx.runfiles(files = _input_files(dict)).merge(core[DefaultInfo].default_runfiles))]
 
 generate_foundation_layer_script = rule(
-    attrs = {
-        "bsw_pkg": attr.label(doc = "The BSW package folder.", allow_single_file = True, mandatory = True),
+    attrs = _BSW_PKG_ATTR | {
         "output": attr.label(doc = "The destination folder for generated sources.", allow_single_file = True, mandatory = True),
         "filter": attr.label(doc = "Optional filter file containing the definition-references of all modules to be generated, separated by newlines. If this is not provided all modules of the BSW package are generated.", allow_single_file = True)
     },
@@ -263,452 +233,21 @@ script_jar = macro(
 def _exclusive_label(ctx):
     return { "DVCFG_EXCLUSIVE_LABEL": str(ctx.label) }
 
-def _cli_cmd(ctx, input_files, cmd, **kwargs):
-    out = ctx.actions.declare_file(ctx.label.name)
-    cfg6 = ctx.toolchains[":toolchain_type"].cfg6
-    ctx.actions.run_shell(
-        outputs = [out],
-        inputs = [ctx.file.upstream] + input_files,
-        command = ('"{cli}" ' + cmd + ' && ' + cfg6.result_file_cmd).format(
-            cli = cfg6.cli,
-            bsw = ctx.attr.bsw_pkg,
-            dvjson = ctx.attr.dvjson,
-            out = out.path,
-            **kwargs
-        ),
-        env = _exclusive_label(ctx),
-        use_default_shell_env = True
-    )
-    return [DefaultInfo(files = depset([out]))]
-
-_BSW_PKG_ATTR = { "bsw_pkg": attr.string(doc = "The BSW package folder.", mandatory = True) }
-
-_STD_CLI_ATTRS = dict(
-    _BSW_PKG_ATTR,
-    dvjson = attr.string(doc = "The .dvjson file.", mandatory = True),
-    upstream = attr.label(doc = "The upstream pipeline target.", allow_single_file = True, mandatory = True)
-)
-
-def _import_evs_impl(ctx):
-    return _cli_cmd(ctx, ctx.files.srcs, 'import evs -b "{bsw}" -p "{dvjson}" "{srcs}"', srcs = '" "'.join([file.path for file in ctx.files.srcs]))
-
-import_evs = rule(
-    doc = "Internal rule for adding an EvaluatedVariantSet to the DaVinci project.",
-    attrs = dict(_STD_CLI_ATTRS, srcs = attr.label_list(doc = "The .arxml files containing the EvaluatedVariantSet.", allow_files = [".arxml"], allow_empty = False, mandatory = True)),
-    implementation = _import_evs_impl,
-    toolchains = [":toolchain_type"]
-)
-
-def _derive_ecuc_impl(ctx):
-    return _cli_cmd(ctx, ctx.files.srcs, 'project derive-ecuc -b "{bsw}" -p "{dvjson}" --force "{srcs}"', srcs = '" "'.join([file.path for file in ctx.files.srcs]))
-
-derive_ecuc = rule(
-    doc = "Internal rule for adding an ECU extract to the DaVinci project.",
-    attrs = dict(_STD_CLI_ATTRS, srcs = attr.label_list(doc = "The .arxml files containing the ECU extract and optional EvaluatedVariantSet files.", allow_files = [".arxml"], allow_empty = False, mandatory = True)),
-    implementation = _derive_ecuc_impl,
-    toolchains = [":toolchain_type"]
-)
-
-def _replace_modules_impl(ctx):
-    return [DefaultInfo(files = depset(ctx.files.arxmls)), ModuleImportMergeModeProvider(replace = True)]
-
-replace_modules = rule(
-    doc = "Rule for specifying module configurations to be imported in replace mode.",
-    attrs = {
-        "arxmls": attr.label_list(doc = "The .arxml files containing the module configurations.", allow_files = [".arxml"], allow_empty = False, mandatory = True)
-    },
-    implementation = _replace_modules_impl,
-)
-
-def _import_modules_impl(ctx):
-    upstream = ctx.file.upstream
-    i = 0
-    cfg6 = ctx.toolchains[":toolchain_type"].cfg6
-    for module in ctx.attr.modules:
-        replace = " -r" if ModuleImportMergeModeProvider in module else ""
-        for file in module[DefaultInfo].files.to_list():
-            out = ctx.actions.declare_file("{}_{}".format(ctx.label.name, i))
-            i += 1
-            ctx.actions.run_shell(
-                outputs = [out],
-                inputs = [upstream, file],
-                command = ('"{cli}" import module -b "{bsw}" -p "{dvjson}"{replace} "{file}" && ' + cfg6.result_file_cmd).format(
-                    cli = cfg6.cli,
-                    bsw = ctx.attr.bsw_pkg,
-                    dvjson = ctx.attr.dvjson,
-                    replace = replace,
-                    file = file.path,
-                    out = out.path
-                ),
-                env = _exclusive_label(ctx),
-                use_default_shell_env = True
-            )
-            upstream = out
-    return [DefaultInfo(files = depset([upstream]))]
-
-import_modules = rule(
-    doc = "Rule for importing module configurations into the DaVinci project.",
-    attrs = dict(_STD_CLI_ATTRS, modules = attr.label_list(doc = 'The .arxml files containing the module configurations (use [replace_modules](#replace_modules) to import in replace mode).', allow_files = [".arxml"], allow_empty = False, mandatory = True)),
-    implementation = _import_modules_impl,
-    toolchains = [":toolchain_type"]
-)
-
-def _variant_arxmls_impl(ctx):
-    return [DefaultInfo(files = depset(ctx.files.arxmls)), VariantNameProvider(variant = ctx.attr.variant)]
-
-variant_arxmls = rule(
-    doc = 'Rule for specifying which post-build selectable variant the given .arxml files are associated with (e.g.: when [importing diagnostic modules](#import_diag_modules)).',
-    attrs = {
-        "variant": attr.string(doc = "The name of the variant.", mandatory = True),
-        "arxmls": attr.label_list(doc = "The .arxml files.", allow_files = [".arxml"], allow_empty = False, mandatory = True)
-    },
-    implementation = _variant_arxmls_impl,
-)
-
-def _import_diag_modules_impl(ctx):
-    variant_to_modules = {}
-    for target in ctx.attr.modules:
-        variant = target[VariantNameProvider].variant if VariantNameProvider in target else ""
-        arxml_files = target[DefaultInfo].files.to_list()
-        if variant in variant_to_modules:
-            variant_to_modules[variant].extend(arxml_files)
-        else:
-            variant_to_modules[variant] = arxml_files
-    if len(variant_to_modules) == 1:
-        files = '-f "{}"'.format('","'.join([arxml.path for list in variant_to_modules.values() for arxml in list]))
-    else:
-        if "" in variant_to_modules:
-            fail("These diagnostic modules are not assigned to a variant: " + ", ".join([arxml.owner for arxml in variant_to_modules[""]]))
-        files = " ".join(['-f {}="{}"'.format(variant, '","'.join([arxml.path for arxml in arxmls])) for variant, arxmls in variant_to_modules.items()])
-    return _cli_cmd(ctx, ctx.files.modules, 'import diagnostic-modules -b "{bsw}" -p "{dvjson}" --force {files}',
-        files = files
-    )
-
-import_diag_modules = rule(
-    doc = "Rule for importing diagnostic module configurations into the DaVinci project.",
-    attrs = dict(_STD_CLI_ATTRS, modules = attr.label_list(doc = "The .arxml files containing the diagnostic module configurations.", allow_files = [".arxml"], allow_empty = False, mandatory = True)),
-    implementation = _import_diag_modules_impl,
-    toolchains = [":toolchain_type"]
-)
-
-def _update_project_impl(ctx):
-    return _cli_cmd(ctx, [], 'project update -b "{bsw}" -p "{dvjson}"{switches}',
-        switches = " -{}".format(ctx.attr.switches) if ctx.attr.switches else ""
-    )
-
-update_project = rule(
-    doc = "Internal rule for updating the DaVinci project when input files have changed.",
-    attrs = dict(_STD_CLI_ATTRS, switches = attr.string(doc = '''String consisting of all switches to apply when running the "project update" command (defaults to "" meaning perform all updates). E.g.: "asr" will only run "automatic reference correction", "solve all" and "RTE config update". The following switches are available:<br/>
-`a`: Perform automatic correction of unresolved or inconsistent references.<br/>
-`s`: Perform 'solve all' by executing all recommended solving actions of the project.<br/>
-`c`: Apply changes from project input files.<br/>
-`r`: Apply changes to the RTE configuration.<br/>
-`e`: Apply changes from evaluated variant set.
-''')),
-    implementation = _update_project_impl,
-    toolchains = [":toolchain_type"]
-)
-
 _PRIMITIVE_TYPE = type("")
 _LIST_TYPE = type([])
-_OBJECT_TYPE = type({})
-
-def _file_string(ctx, target):
-    return '"{}/{}"'.format("$(pwd -W)" if ctx.toolchains[":toolchain_type"].cfg6.cli.endswith(".exe") else "$PWD", single_file_from_target(target).path.replace("\\", "/"))
-
-def _arg_to_string(ctx, arg):
-    t = type(arg)
-    if t == _PRIMITIVE_TYPE:
-        return arg
-    if t == _LIST_TYPE:
-        return "[" + ",".join([_arg_to_string_1(ctx, e) for e in arg]) + "]"
-    if t == _OBJECT_TYPE:
-        return "{" + ",".join(['"{}":{}'.format(k, _arg_to_string_1(ctx, v)) for k, v in arg.items()]) + "}"
-    return _file_string(ctx, arg)
-
-def _arg_to_string_1(ctx, arg):
-    t = type(arg)
-    if t == _PRIMITIVE_TYPE:
-        return arg
-    if t == _LIST_TYPE:
-        return "[" + ",".join([_arg_to_string_2(ctx, e) for e in arg]) + "]"
-    if t == _OBJECT_TYPE:
-        return "{" + ",".join(['"{}":{}'.format(k, _arg_to_string_2(ctx, v)) for k, v in arg.items()]) + "}"
-    return _file_string(ctx, arg)
-
-def _arg_to_string_2(ctx, arg):
-    t = type(arg)
-    if t == _PRIMITIVE_TYPE:
-        return arg
-    if t == _LIST_TYPE:
-        return "[" + ",".join([_arg_to_string_3(ctx, e) for e in arg]) + "]"
-    if t == _OBJECT_TYPE:
-        return "{" + ",".join(['"{}":{}'.format(k, _arg_to_string_3(ctx, v)) for k, v in arg.items()]) + "}"
-    return _file_string(ctx, arg)
-
-def _arg_to_string_3(ctx, arg):
-    t = type(arg)
-    if t == _PRIMITIVE_TYPE:
-        return arg
-    if t == _LIST_TYPE:
-        return "[" + ",".join([_arg_to_string_4(ctx, e) for e in arg]) + "]"
-    if t == _OBJECT_TYPE:
-        return "{" + ",".join(['"{}":{}'.format(k, _arg_to_string_4(ctx, v)) for k, v in arg.items()]) + "}"
-    return _file_string(ctx, arg)
-
-def _arg_to_string_4(ctx, arg):
-    t = type(arg)
-    if t == _PRIMITIVE_TYPE:
-        return arg
-    if t == _LIST_TYPE:
-        return "[" + ",".join([_arg_to_string_5(ctx, e) for e in arg]) + "]"
-    if t == _OBJECT_TYPE:
-        return "{" + ",".join(['"{}":{}'.format(k, _arg_to_string_5(ctx, v)) for k, v in arg.items()]) + "}"
-    return _file_string(ctx, arg)
-
-def _arg_to_string_5(ctx, arg):
-    t = type(arg)
-    if t == _LIST_TYPE or t == _OBJECT_TYPE:
-        fail("Maximum nesting level for JSON arguments is 5.")
-    if t == _PRIMITIVE_TYPE:
-        return arg
-    return _file_string(ctx, arg)
-
-def _jar_to_string(ctx, jar):
-    path = single_file_from_target(jar).path
-    arg = jar[AsCodeTypeProvider].arg
-    return '{}//{}'.format(path, _arg_to_string(ctx, arg[AsCodeArgProvider].arg).replace('"', '\\"')) if arg else path
-
-def _as_code_impl(ctx):
-    arg_input_files = [file for default_info in [jar[AsCodeTypeProvider].arg[DefaultInfo] for jar in ctx.attr.jars if jar[AsCodeTypeProvider].arg] for file in default_info.files.to_list()]
-    return _cli_cmd(ctx, ctx.files.jars + arg_input_files, 'eac -b "{bsw}" -p "{dvjson}" -c "{jars}"', jars = '" -c "'.join([_jar_to_string(ctx, jar) for jar in ctx.attr.jars]))
-
-as_code = rule(
-    doc = "Internal rule for adding EaC logic to the DaVinci project.",
-    attrs = dict(_STD_CLI_ATTRS, jars = attr.label_list(doc = 'The EaC .jar files (see [as_code_eac](#as_code_eac)).', providers = [AsCodeTypeProvider], allow_empty = False, mandatory = True)),
-    implementation = _as_code_impl,
-    toolchains = [":toolchain_type"]
-)
-
-def _as_code_arg_impl(ctx):
-    args = [arg for arg in [ctx.attr.value, ctx.attr.values, ctx.attr.file, ctx.attr.files, ctx.attr.list, ctx.attr.object] if arg]
-    if len(args) != 1:
-        fail("Exactly one argument must be provided.")
-    if ctx.attr.value or ctx.attr.values:
-        return [AsCodeArgProvider(arg = args[0])]
-    if ctx.attr.file:
-        return [DefaultInfo(files = depset([ctx.file.file])), AsCodeArgProvider(arg = ctx.attr.file)]
-    if ctx.attr.files:
-        return [DefaultInfo(files = depset(ctx.files.files)), AsCodeArgProvider(arg = ctx.attr.files)]
-    if ctx.attr.list:
-        return [DefaultInfo(files = depset(transitive = [target[DefaultInfo].files for target in ctx.attr.list])), AsCodeArgProvider(arg = [target[AsCodeArgProvider].arg for target in ctx.attr.list])]
-    return [DefaultInfo(files = depset(transitive = [target[DefaultInfo].files for target in ctx.attr.object.values()])), AsCodeArgProvider(arg = { key: target[AsCodeArgProvider].arg for key, target in ctx.attr.object.items() })]
-
-as_code_arg = rule(
-    doc = "Rule for specifying arguments for the EaC code.",
-    attrs = {
-        "value": attr.string(doc = 'A primitive JSON value (e.g.: `true`, `false`, `123`, `"string"`, `null`). Use `"${ENV_VAR-}"` to provide environment variable values as strings.'),
-        "values": attr.string_list(doc = "A list of values (see [value](#as_code_arg.value))."),
-        "file": attr.label(allow_single_file = True, doc = "A file argument (available to the code as String containing the absolute file path)."),
-        "files": attr.label_list(doc = "A list of files (available to the code as Strings containing the absolute file paths)."),
-        "list": attr.label_list(doc = "A list of `as_code_arg` labels.", providers = [AsCodeArgProvider]),
-        "object": attr.string_keyed_label_dict(doc = "An `as_code_arg`-label-valued JSON object.", providers = [AsCodeArgProvider])
-    },
-    implementation = _as_code_arg_impl
-)
-
-_UPSTREAM_ATTR = { "upstream": attr.label(doc = "The upstream pipeline target.", providers = [PipelineProjectProvider], allow_single_file = [".tar.gz"], mandatory = True) }
-
-_STD_EXPORT_ATTRS = dict(
-    _UPSTREAM_ATTR,
-    binding_time = attr.string(doc = "Binding time to use for the export."),
-    split_pre_build_variants = attr.bool(doc = "Generate separate output for each pre-build variant."),
-    split_post_build_variants = attr.bool(doc = "Generate separate output for each post-build variant."),
-    args = attr.string_list(doc = "Exporter-specific arguments.")
-)
-
-def _apply_bswmd_impl(ctx):
-    return _cli_cmd(ctx, [], 'project apply-bswmd -b "{bsw}" -p "{dvjson}"')
-
-apply_bswmd = rule(
-    doc = "Internal rule for applying pre config, recommended config and BSWMD defaults to the ECU configuration derived from the ECU extract.",
-    attrs = _STD_CLI_ATTRS,
-    implementation = _apply_bswmd_impl,
-    toolchains = [":toolchain_type"]
-)
-
-def _run_export_impl(ctx):
-    out = ctx.actions.declare_directory(ctx.label.name + "/export")
-    ctx.actions.run_shell(
-        outputs = [out],
-        inputs = [ctx.file.upstream],
-        command = "{unpack} && {command}".format(
-            unpack = _unpack(ctx, out.dirname),
-            command = _format_command(ctx, out.dirname, '"{dvcfg}" export run -b "{bsw}" -p "{dvjson}" -o "{out}" -e "{exporter}"{binding_time}{split_pre}{split_post}{args}',
-                out = out.path,
-                exporter = ctx.attr.exporter,
-                binding_time = ' --binding-time "{}"'.format(ctx.attr.binding_time) if ctx.attr.binding_time else "",
-                split_pre = " --split-pre-build-variants" if ctx.attr.split_pre_build_variants else "",
-                split_post = " --split-post-build-variants" if ctx.attr.split_post_build_variants else "",
-                args = (" " + " ".join(ctx.attr.args)) if ctx.attr.args else ""
-            )),
-        env = _exclusive_label(ctx),
-        use_default_shell_env = True
-    )
-    return [DefaultInfo(files = depset([out]))]
-
-run_export = rule(
-    doc = "Rule for exporting data from the DaVinci project.",
-    attrs = dict(_STD_EXPORT_ATTRS, exporter = attr.string(doc = "Exporter ID. A list of all IDs is available via the `export list` command of the DaVinci Configurator Classic CLI.", mandatory = True)),
-    implementation = _run_export_impl,
-    toolchains = [":toolchain_type"]
-)
-
-def _export_flat_extract_impl(ctx):
-    out = ctx.actions.declare_directory(ctx.label.name + "/flat_extract")
-    ctx.actions.run_shell(
-        outputs = [out],
-        inputs = [ctx.file.upstream],
-        command = "{unpack} && {command}".format(
-            unpack = _unpack(ctx, out.dirname),
-            command = _format_command(ctx, out.dirname, '"{dvcfg}" export run -b "{bsw}" -p "{dvjson}" -o "{out}" -e "{exporters}"{binding_time}{split_pre}{split_post}{args}',
-                out = out.path,
-                exporters = '" -e "'.join(ctx.attr.exporters),
-                binding_time = ' --binding-time "{}"'.format(ctx.attr.binding_time) if ctx.attr.binding_time else "",
-                split_pre = " --split-pre-build-variants" if ctx.attr.split_pre_build_variants else "",
-                split_post = " --split-post-build-variants" if ctx.attr.split_post_build_variants else "",
-                args = (" " + " ".join(ctx.attr.args)) if ctx.attr.args else ""
-            )),
-        env = _exclusive_label(ctx),
-        use_default_shell_env = True
-    )
-    return [DefaultInfo(files = depset([out]))]
-
-export_flat_extract = rule(
-    doc = "Rule for exporting a flat ECU extract from the DaVinci project.",
-    attrs = dict(_STD_EXPORT_ATTRS, exporters = attr.string_list(doc = "Exporter IDs. A list of all IDs is available via the `export list` command of the DaVinci Configurator Classic CLI.", allow_empty = False, mandatory = True)),
-    implementation = _export_flat_extract_impl,
-    toolchains = [":toolchain_type"]
-)
-
-def _format_command(ctx, folder, cmd, **kwargs):
-    pipeline_project_provider = ctx.attr.upstream[PipelineProjectProvider]
-    return cmd.format(
-        dvcfg = kwargs.get("dvcfg", default = ctx.toolchains[":toolchain_type"].cfg6.cli),
-        project = kwargs.get("project", default = folder + "/" + pipeline_project_provider.dvjson),
-        bsw_pkg = kwargs.get("bsw_pkg", default = pipeline_project_provider.bsw_pkg),
-        **kwargs
-    )
-
-def _unpack(ctx, folder):
-    return ctx.toolchains[":toolchain_type"].archive.unpack.format(archive = ctx.file.upstream.path, folder = folder)
-
-def _generate_impl(ctx):
-    out = ctx.actions.declare_directory(ctx.label.name + "/Output/Source/GenData" + ("Vtt" if ctx.attr.type == "VTT" else ""))
-    folder = out.dirname
-    folder = folder[:folder.rfind("/", 0, folder.rfind("/"))]
-    ctx.actions.run_shell(
-        outputs = [out],
-        inputs = [ctx.file.upstream],
-        command = "{unpack} && {command}".format(
-            unpack = _unpack(ctx, folder),
-            command = _format_command(ctx, folder, '"{dvcfg}" project generate -b "{bsw_pkg}" -p "{project}"{modules}{excluded}{ext}{type}{keep_tmp}{clean}{no_save}',
-                modules = (" '-m=" + ",".join(ctx.attr.modules) + "'") if ctx.attr.modules else "",
-                excluded = (" '-x=" + ",".join(ctx.attr.excluded) + "'") if ctx.attr.excluded else "",
-                ext = (' --ext-steps "' + '","'.join(ctx.attr.ext_steps) + '"') if ctx.attr.ext_steps else "",
-                type = ' -t "{}"'.format(ctx.attr.type) if ctx.attr.type else "",
-                keep_tmp = " --keep-temp-files" if ctx.attr.keep_tmp_files else "",
-                clean = " --clean-generate" if ctx.attr.skip_up_to_date_checks else "",
-                no_save = " --no-save" if ctx.attr.no_save else ""
-            )),
-        env = _exclusive_label(ctx),
-        use_default_shell_env = True
-    )
-    return [DefaultInfo(files = depset([out]))]
-
-generate = rule(
-    doc = "Rule for generating the BSW code.",
-    attrs = dict(
-        _UPSTREAM_ATTR,
-        modules = attr.string_list(doc = 'Modules to generate, given either by definition (e.g. "/MICROSAR/Rte") or short name (e.g. "Rte"). "from-project" generates the modules selected in the project settings and can be combined with explicitly state modules. Defaults to generating all modules.'),
-        excluded = attr.string_list(doc = 'Modules to exclude from generation, given either by definition (e.g. "/MICROSAR/Rte") or short name (e.g. "Rte").'),
-        ext_steps = attr.string_list(doc = "External generation steps to execute, given by name. Defaults to executing all steps. Use a single empty string to disable any steps."),
-        type = attr.string(doc = 'Generation target ("REAL" or "VTT").', values = ["REAL", "VTT"]),
-        keep_tmp_files = attr.bool(doc = "Keep temporary files created during generation."),
-        skip_up_to_date_checks = attr.bool(doc = "Run validation and generation without performing up-to-date checks."),
-        no_save = attr.bool(doc = "Prevent saving the project to disk.")
-    ),
-    implementation = _generate_impl,
-    toolchains = [":toolchain_type"]
-)
-
-def _generate_swct_impl(ctx):
-    out = ctx.actions.declare_directory(ctx.label.name + "/Output/Source/Templates")
-    folder = out.dirname
-    folder = folder[:folder.rfind("/", 0, folder.rfind("/"))]
-    ctx.actions.run_shell(
-        outputs = [out],
-        inputs = [ctx.file.upstream],
-        command = "{unpack} && {command}".format(
-            unpack = _unpack(ctx, folder),
-            command = _format_command(ctx, folder, '"{dvcfg}" project generate-swct -b "{bsw_pkg}" -p "{project}"{components}{args}{keep_tmp}{no_save}',
-                components = (' -c "' + '","'.join(ctx.attr.components) + '"') if ctx.attr.components else "",
-                args = (' -a "' + '","'.join(ctx.attr.args) + '"') if ctx.attr.args else "",
-                keep_tmp = " --keep-temp-files" if ctx.attr.keep_tmp_files else "",
-                no_save = " --no-save" if ctx.attr.no_save else ""
-            )),
-        env = _exclusive_label(ctx),
-        use_default_shell_env = True
-    )
-    return [DefaultInfo(files = depset([out]))]
-
-generate_swct = rule(
-    doc = "Rule for generating SWC templates and contract phase headers.",
-    attrs = dict(
-        _UPSTREAM_ATTR,
-        components = attr.string_list(doc = "Software components for which a template and/or contract phase header will be generated, given by name specified in the project settings."),
-        args = attr.string_list(doc = 'Arguments for certain generators given in the form "<module>:<arg>" where <module> is a module definition (e.g. "/MICROSAR/Rte") or short name (e.g. "Rte").'),
-        keep_tmp_files = attr.bool(doc = "Keep temporary files created during generation."),
-        no_save = attr.bool(doc = "Prevent saving the project to disk.")
-    ),
-    implementation = _generate_swct_impl,
-    toolchains = [":toolchain_type"]
-)
-
-def _as_code_eac_impl(ctx):
-    return [DefaultInfo(files = depset([ctx.file.jar])), AsCodeTypeProvider(type = "eac", arg = ctx.attr.arg)]
-
-as_code_eac = rule(
-    doc = "Rule for marking up a .jar for EaC usage.",
-    attrs = {
-        "jar": attr.label(doc = 'The EaC .jar file.', allow_single_file = [".jar"], mandatory = True),
-        "arg": attr.label(doc = 'Optional argument (see [as_code_arg](#as_code_arg)).', providers = [AsCodeArgProvider])
-    },
-    implementation = _as_code_eac_impl
-)
 
 def _system_extract_impl(ctx):
-    name = ctx.label.name
-    out = ctx.actions.declare_file(name + ".arxml")
-    sysd = ctx.files.sysd
-    ctx.actions.run_shell(
-        outputs = [out],
-        inputs = sysd,
-        command = '"{xpro}" extract-sysd -i "{sysd}" -e {ecu} "{out}"'.format(
-            xpro = ctx.toolchains[":toolchain_type"].cfg6.xpro,
-            sysd = '" -i "'.join([file.path for file in sysd]),
-            ecu = ctx.attr.ecu if ctx.attr.ecu else name,
-            out = out.path
-        ),
-        env = _exclusive_label(ctx),
-        use_default_shell_env = True
-    )
+    xpro = ctx.toolchains[":toolchain_type"].cfg6.xpro
+    out = ctx.actions.declare_file(ctx.label.name + ".arxml")
+    dict = { "xpro": xpro, "-i": ctx.attr.src, "ecu": ctx.attr.ecu or ctx.label.name, "out": out.path }
+    script = _script(ctx, ctx.label.name + ".sh", "{xpro} extract-sysd {-i} -e {ecu} '{out}'", True, dict)
+    ctx.actions.run_shell(outputs = [out], inputs = _input_files(dict), tools = _files(xpro) + [script], command = "./" + script.path, env = _exclusive_label(ctx), use_default_shell_env = True)
     return [DefaultInfo(files = depset([out]))]
 
 system_extract = rule(
     doc = "Rule for extracting a given ECU from a system description.",
     attrs = {
-        "sysd": attr.label_list(doc = "The system description .arxml files from which to extract the given ECU.", allow_files = [".arxml"], allow_empty = False, mandatory = True),
+        "src": attr.label(doc = "The system description .arxml files from which to extract the given ECU.", allow_files = [".arxml"], mandatory = True),
         "ecu": attr.string(doc = "The ECU to extract from the given system description (defaults to rule name).")
     },
     implementation = _system_extract_impl,
@@ -716,51 +255,38 @@ system_extract = rule(
 )
 
 def _merged_extract_impl(ctx):
+    xpro = ctx.toolchains[":toolchain_type"].cfg6.xpro
     out = ctx.actions.declare_file(ctx.label.name + ".arxml")
-    ctx.actions.run_shell(
-        outputs = [out],
-        inputs = ctx.files.srcs,
-        command = '"{xpro}" merge -i "{input}" "{out}"'.format(
-            xpro = ctx.toolchains[":toolchain_type"].cfg6.xpro,
-            input = '" -i "'.join([f.path for f in ctx.files.srcs]),
-            out = out.path
-        ),
-        env = _exclusive_label(ctx),
-        use_default_shell_env = True
-    )
+    dict = { "xpro": xpro, "-i": ctx.attr.src, "out": out.path }
+    script = _script(ctx, ctx.label.name + ".sh", "{xpro} merge {-i} '{out}'", True, dict)
+    ctx.actions.run_shell(outputs = [out], inputs = _input_files(dict), tools = _files(xpro) + [script], command = "./" + script.path, env = _exclusive_label(ctx), use_default_shell_env = True)
     return [DefaultInfo(files = depset([out]))]
 
 merged_extract = rule(
     doc = "Rule for merging multiple .arxml files into an ECU extract.",
     attrs = {
-        "srcs": attr.label_list(doc = "The .arxml files to merge into one ECU extract.", allow_files = [".arxml"], allow_empty = False, mandatory = True),
+        "src": attr.label(doc = "The .arxml files to merge into one ECU extract.", allow_files = [".arxml"], mandatory = True),
     },
     implementation = _merged_extract_impl,
     toolchains = [":toolchain_type"]
 )
 
 def _variant_extract_impl(ctx):
+    xpro = ctx.toolchains[":toolchain_type"].cfg6.xpro
     out = ctx.actions.declare_file(ctx.label.name + ".arxml")
-    ctx.actions.run_shell(
-        outputs = [out],
-        inputs = ctx.files.evs + [ctx.file.config] + [target[DefaultInfo].files.to_list()[0] for target in ctx.attr.extracts.keys()],
-        command = '"{xpro}" variant-merge -m "{config}" -e "{evs}" {extracts} "{out}"'.format(
-            xpro = ctx.toolchains[":toolchain_type"].cfg6.xpro,
-            config = ctx.file.config.path,
-            evs = '","'.join([file.path for file in ctx.files.evs]),
-            extracts = " ".join(['-f {}="{}"'.format(variant, extract[DefaultInfo].files.to_list()[0].path) for extract, variant in ctx.attr.extracts.items()]),
-            out = out.path
-        ),
-        env = _exclusive_label(ctx),
-        use_default_shell_env = True
-    )
-    return [DefaultInfo(files = depset(ctx.files.evs + [out]))]
+    dict = { "_xpro": xpro, "-m": ctx.attr.config, "_evs|,": ctx.attr.evs, "_out": out.path } | ctx.attr.srcs
+    cmd = '{_xpro} variant-merge {-m} -e {_evs} '
+    for variant in ctx.attr.srcs.keys():
+        cmd += '-f {v}={{{v}}} '.format(v = variant)
+    script = _script(ctx, ctx.label.name + ".sh", cmd + '"{_out}"', True, dict)
+    ctx.actions.run_shell(outputs = [out], inputs = _input_files(dict), tools = _files(xpro) + [script], command = "./" + script.path, env = _exclusive_label(ctx), use_default_shell_env = True)
+    return [DefaultInfo(files = depset([out]))]
 
 variant_extract = rule(
     doc = "Rule for creating a variant ECU extract from invariant extracts.",
     attrs = {
-        "evs": attr.label_list(doc = "The .arxml files containing the EvaluatedVariantSet.", allow_files = [".arxml"], allow_empty = False, mandatory = True),
-        "extracts": attr.label_keyed_string_dict(doc = 'One extract for each variant in the EvaluatedVariantSet. E.g.: { ":ExtractA": "VariantA", ... }', allow_files = [".arxml"], allow_empty = False, mandatory = True),
+        "evs": attr.label(doc = "The .arxml files containing the EvaluatedVariantSet.", allow_files = [".arxml"], mandatory = True),
+        "srcs": attr.string_keyed_label_dict(doc = 'One extract file for each variant in the EvaluatedVariantSet. E.g.: { "VariantA": ":ExtractA", ... }', allow_files = [".arxml"], allow_empty = False, mandatory = True),
         "config": attr.label(doc = "The merge configuration .xml file.", allow_single_file = [".xml"], mandatory = True)
     },
     implementation = _variant_extract_impl,
@@ -784,23 +310,19 @@ def _task_args(ctx):
 
 def _script_patched_arxml_impl(ctx):
     out = ctx.actions.declare_file(ctx.label.name + ".arxml")
-    scripts = { single_file_from_target(task): True for task in ctx.attr.tasks }.keys()
     file_args = [single_file_from_target(target) for task in ctx.attr.tasks for target in task[ScriptTaskProvider].file_args.values()]
-    ctx.actions.run_shell(
-        outputs = [out],
-        inputs =  scripts + file_args + ctx.files.srcs,
-        command = '"{xpro}" run-script -i "{src}"{evs} -l "{scripts}" -t "{tasks}"{args} "{out}"'.format(
-            xpro = ctx.toolchains[":toolchain_type"].cfg6.xpro,
-            src = ctx.files.srcs[0].path,
-            evs =  ' -e "{}"'.format('","'.join([file.path for file in ctx.files.srcs[1:]])) if len(ctx.files.srcs) > 1 else "",
-            scripts = '","'.join({single_file_from_target(task).path: True for task in ctx.attr.tasks}.keys()),
-            tasks = '","'.join([_task_name(task) for task in ctx.attr.tasks]),
-            args = _task_args(ctx),
-            out = out.path
-        ),
-        env = _exclusive_label(ctx),
-        use_default_shell_env = True
-    )
+    xpro = ctx.toolchains[":toolchain_type"].cfg6.xpro
+    dict = {
+        "xpro": xpro,
+        "src": ctx.files.srcs[0].path,
+        "evs":  " -e '{}'".format("','".join([file.path for file in ctx.files.srcs[1:]])) if len(ctx.files.srcs) > 1 else "",
+        "scripts|,": ctx.attr.tasks,
+        "tasks": "','".join([_task_name(task) for task in ctx.attr.tasks]),
+        "args": _task_args(ctx),
+        "out": out.path
+    }
+    script = _script(ctx, ctx.label.name + ".sh", "{xpro} run-script -i '{src}'{evs} -l '{scripts}' -t '{tasks}'{args} '{out}'", True, dict)
+    ctx.actions.run_shell(outputs = [out], inputs = _input_files(dict) + file_args + ctx.files.srcs, tools = _files(xpro) + [script], command = "./" + script.path, env = _exclusive_label(ctx), use_default_shell_env = True)
     return [DefaultInfo(files = depset([out]))]
 
 _SCRIPT_PATCHED_ARXML_ATTRS = {
@@ -916,119 +438,10 @@ merged_arxml = macro(
     implementation = _merged_arxml_impl
 )
 
-def _downstream_project_impl(ctx):
-    out = ctx.actions.declare_file(ctx.label.name + ".tar.gz")
-    dvjson = ctx.attr.dvjson
-    i = dvjson.rfind("/")
-    ctx.actions.run_shell(
-        outputs = [out],
-        inputs =  [ctx.file.upstream],
-        command = ctx.toolchains[":toolchain_type"].archive.pack.format(out.path, dvjson[:i])
-    )
-    return [DefaultInfo(files = depset([out])), PipelineProjectProvider(dvjson = dvjson[i + 1:], bsw_pkg = ctx.attr.bsw_pkg)]
-
-downstream_project = rule(
-    doc = "Internal rule for creating the `project` target of an ECU configuration repo.",
-    attrs = _STD_CLI_ATTRS,
-    implementation = _downstream_project_impl,
-    toolchains = [":toolchain_type"]
-)
-
-def _archived_project_impl(ctx):
-    return [DefaultInfo(files = depset([ctx.file.archive])), PipelineProjectProvider(dvjson = ctx.attr.dvjson, bsw_pkg = ctx.attr.bsw_pkg)]
-
-archived_project = rule(
-    doc = "Rule for using an archived DaVinci project.",
-    attrs = dict(
-        _BSW_PKG_ATTR,
-        dvjson = attr.string(doc = "The name of the .dvjson file in the archive.", mandatory = True),
-        archive = attr.label(doc = "The archive file.", allow_single_file = True, mandatory = True)
-    ),
-    implementation = _archived_project_impl,
-    toolchains = [":toolchain_type"]
-)
-
-def _dvcfg_cli_step_impl(ctx):
-    out = ctx.actions.declare_file(ctx.label.name + ".tar.gz")
-    folder = out.dirname + "/" + ctx.label.name
-    ctx.actions.run_shell(
-        outputs = [out],
-        inputs =  [file for target in ctx.attr.inputs.values() for file in target[DefaultInfo].files.to_list()] + [ctx.file.upstream],
-        command = "{unpack} && {command} && {pack}".format(
-            unpack = _unpack(ctx, folder),
-            command = _format_command(ctx, folder, ctx.attr.command, **{ key: single_file_from_target(target).path for key, target in ctx.attr.inputs.items() }),
-            pack = ctx.toolchains[":toolchain_type"].archive.pack.format(out.path, folder)
-        ),
-        env = _exclusive_label(ctx),
-        use_default_shell_env = True
-    )
-    return [DefaultInfo(files = depset([out])), ctx.attr.upstream[PipelineProjectProvider]]
-
-dvcfg_cli_step = rule(
-    doc = "Internal rule for running a generic CLI command on a DaVinci project.",
-    attrs = dict(
-        _UPSTREAM_ATTR,
-        command = attr.string(doc = "Command to run on the project (see [run_shell](https://bazel.build/rules/lib/builtins/actions#run_shell.command)). Use `{dvcfg}` for the DaVinci Configurator Classic CLI executable, `{project}` for the .dvjson file and `{bsw_pkg}` for the BSW package folder.", mandatory = True),
-        inputs = attr.string_keyed_label_dict(doc = 'Input files (see [run_shell](https://bazel.build/rules/lib/builtins/actions#run_shell.inputs)). Use `{key}` to access file `input["key"]` in `command`.', allow_files = True),
-    ),
-    implementation = _dvcfg_cli_step_impl,
-    toolchains = [":toolchain_type"]
-)
-
-def _rlocation(ctx, target):
-    if type(target) == _LIST_TYPE:
-        return '","'.join(["$(rlocation {})".format(ctx.expand_location("$(rlocationpath {})".format(t.label), [t])) for t in target])
-    return "$(rlocation {})".format(ctx.expand_location("$(rlocationpath {})".format(target.label), [target]))
-
-def _dvcfg_cli_executable_script_impl(ctx):
-    out = ctx.actions.declare_file(ctx.label.name + "/" + ctx.label.name + ".sh")
-    ctx.actions.write(
-        out,
-        "{unpack} && {command}".format(
-            unpack = ctx.toolchains[":toolchain_type"].archive.unpack.format(archive = _rlocation(ctx, ctx.attr.upstream), folder = "upstream"),
-            command = _format_command(ctx, "upstream", ctx.attr.command, **{ key: _rlocation(ctx, target) for key, target in ctx.attr.inputs.items() })
-        ),
-        is_executable = True
-    )
-    return [DefaultInfo(executable = out, runfiles = ctx.runfiles(files = [ctx.file.upstream] + [file for target in ctx.attr.inputs.values() for file in target[DefaultInfo].files.to_list()]))]
-
-dvcfg_cli_executable_script = rule(
-    doc = "Internal rule for creating a generic executable on a DaVinci project.",
-    attrs = dict(
-        _UPSTREAM_ATTR,
-        command = attr.string(doc = "Command to run on the project (see [run_shell](https://bazel.build/rules/lib/builtins/actions#run_shell.command)). Use `{dvcfg}` for the DaVinci Configurator Classic CLI executable, `{project}` for the .dvjson file and `{bsw_pkg}` for the BSW package folder.", mandatory = True),
-        inputs = attr.string_keyed_label_dict(doc = 'Input files (see [run_shell](https://bazel.build/rules/lib/builtins/actions#run_shell.inputs)). Use `{key}` to access file `input["key"]` in `command`.', allow_files = True),
-    ),
-    implementation = _dvcfg_cli_executable_script_impl,
-    toolchains = [":toolchain_type"]
-)
-
-def _pipeline_executable_impl(name, visibility, tags, **kwargs):
-    script_name = name + "_script"
-    dvcfg_cli_executable_script(
-        name = script_name,
-        visibility = ["//visibility:private"],
-        tags = ["no-ide"],
-        **kwargs
-    )
-    sh_binary(
-        name = name,
-        srcs = [script_name],
-        use_bash_launcher = True,
-        visibility = visibility,
-        tags = tags
-    )
-
-pipeline_executable = macro(
-    doc = "Macro for creating a generic executable on a DaVinci project.",
-    inherit_attrs = dvcfg_cli_executable_script,
-    implementation = _pipeline_executable_impl
-)
-
 def _script_task_impl(ctx):
     return [
         DefaultInfo(files = depset([ctx.file.script])),
-        ScriptTaskProvider(task_name = ctx.attr.task_name if ctx.attr.task_name else ctx.label.name, args = ctx.attr.args, file_args = ctx.attr.file_args)
+        ScriptTaskProvider(task_name = ctx.attr.task_name or ctx.label.name, args = ctx.attr.args, file_args = ctx.attr.file_args)
     ]
 
 script_task = rule(
@@ -1042,169 +455,11 @@ script_task = rule(
     implementation = _script_task_impl
 )
 
-def _gui_script_impl(ctx):
-    out = ctx.actions.declare_file(ctx.label.name + ".sh")
-    cfg6 = ctx.toolchains[":toolchain_type"].cfg6
-    evo1 = ctx.attr.evo1
-    template = '"{dvcfg}" --project "{project}" --bsw-package "{bsw_pkg}" && read -srn 1 -p "Press any key to terminate..."' if evo1 else cfg6.gui_template
-    ctx.actions.write(
-        out,
-        template.format(
-            dvcfg = evo1 if evo1 else cfg6.gui,
-            project = ctx.attr.dvjson,
-            bsw_pkg = ctx.attr.bsw_pkg
-        ),
-        is_executable = True
-    )
-    return [DefaultInfo(executable = out, runfiles = ctx.runfiles(files = [ctx.file.upstream]))]
-
-gui_script = rule(
-    doc = "Internal rule for generating a launcher script for DaVinci Configurator Classic Version 6 GUI tool.",
-    attrs = dict(_STD_CLI_ATTRS, evo1 = attr.string(doc = "The DaVinci Configurator Classic Version 6 Evo1 GUI executable for opening the project (absolute path).")),
-    implementation = _gui_script_impl,
-    toolchains = [":toolchain_type"]
-)
-
-def _edit_project_impl(name, visibility, tags, **kwargs):
-    script_name = name + "_script"
-    gui_script(
-        name = script_name,
-        visibility = ["//visibility:private"],
-        tags = ["no-ide"],
-        **kwargs
-    )
-    sh_binary(
-        name = name,
-        srcs = [script_name],
-        visibility = visibility,
-        tags = tags
-    )
-
-edit_project = macro(
-    doc = "Macro for editing the project of an `ecu_config` repo in DaVinci Configurator Classic Version 6 GUI tool.",
-    inherit_attrs = gui_script,
-    implementation = _edit_project_impl
-)
-
-def _run_script_impl(ctx):
-    out = ctx.actions.declare_file(ctx.label.name + ".sh")
-    ctx.actions.write(
-        out,
-        ctx.attr.command.format(
-            dvcfg = ctx.toolchains[":toolchain_type"].cfg6.cli,
-            project = ctx.attr.dvjson,
-            bsw_pkg = ctx.attr.bsw_pkg,
-            **{ key: _rlocation(ctx, target) for key, target in ctx.attr.inputs.items() }
-        ),
-        is_executable = True
-    )
-    return [DefaultInfo(executable = out, runfiles = ctx.runfiles(files = [ctx.file.upstream] + [file for target in ctx.attr.inputs.values() for file in target[DefaultInfo].files.to_list()]))]
-
-run_script = rule(
-    doc = "Internal rule for running DaVinci Configurator Classic Version 6 on a DaVinci project.",
-    attrs = dict(
-        _STD_CLI_ATTRS,
-        command = attr.string(doc = "Command to run on the project (see [run_shell](https://bazel.build/rules/lib/builtins/actions#run_shell.command)). Use `{dvcfg}` for the DaVinci Configurator Classic CLI executable, `{project}` for the .dvjson file and `{bsw_pkg}` for the BSW package folder.", mandatory = True),
-        inputs = attr.string_keyed_label_dict(doc = 'Input files (see [run_shell](https://bazel.build/rules/lib/builtins/actions#run_shell.inputs)). Use `{key}` to access file `input["key"]` in `command`.', allow_files = True),
-    ),
-    implementation = _run_script_impl,
-    toolchains = [":toolchain_type"]
-)
-
-def _run_on_project_impl(name, visibility, tags, **kwargs):
-    script_name = name + "_script"
-    run_script(
-        name = script_name,
-        visibility = ["//visibility:private"],
-        tags = ["no-ide"],
-        **kwargs
-    )
-    sh_binary(
-        name = name,
-        srcs = [script_name],
-        use_bash_launcher = True,
-        visibility = visibility,
-        tags = tags
-    )
-
-run_on_project = macro(
-    doc = "Macro for running DaVinci Configurator Classic Version 6 on the project of an `ecu_config` repo.",
-    inherit_attrs = run_script,
-    implementation = _run_on_project_impl
-)
-
-def _validation_report_impl(ctx):
-    out = ctx.actions.declare_file(ctx.label.name + "/validation_report.html")
-    ctx.actions.run_shell(
-        outputs = [out],
-        inputs = [ctx.file.upstream],
-        command = "{unpack} && {command}".format(
-            unpack = _unpack(ctx, out.dirname),
-            command = _format_command(ctx, out.dirname, '"{dvcfg}" project validate -b "{bsw_pkg}" -p "{project}" --fail-on NONE --report "{out}"', out = out.path)
-        ),
-        env = _exclusive_label(ctx),
-        use_default_shell_env = True
-    )
-    return [DefaultInfo(files = depset([out]))]
-
-validation_report = rule(
-    doc = "Rule for creating a validating report for a DaVinci project.",
-    attrs = _UPSTREAM_ATTR,
-    implementation = _validation_report_impl,
-    toolchains = [":toolchain_type"]
-)
-
-def _view_result_script_impl(ctx):
-    out = ctx.actions.declare_file(ctx.label.name + "/" + ctx.label.name + ".sh")
-    ctx.actions.write(
-        out,
-        "{unpack} && {open}".format(
-            unpack = ctx.toolchains[":toolchain_type"].archive.unpack.format(archive = _rlocation(ctx, ctx.attr.upstream), folder = "upstream"),
-            open = _format_command(ctx, "upstream", ctx.toolchains[":toolchain_type"].cfg6.gui_template)
-        ),
-        is_executable = True
-    )
-    return [DefaultInfo(executable = out, runfiles = ctx.runfiles(files = [ctx.file.upstream]))]
-
-view_result_script = rule(
-    doc = "Internal rule for viewing the result of a `pipeline_step` in DaVinci Configurator Classic Version 6 GUI tool.",
-    attrs = _UPSTREAM_ATTR,
-    implementation = _view_result_script_impl,
-    toolchains = [":toolchain_type"]
-)
-
-def _pipeline_step_impl(name, upstream, **kwargs):
-    dvcfg_cli_step(
-        name = name,
-        upstream = upstream,
-        **kwargs
-    )
-    script_name = name + "_view_script"
-    view_result_script(
-        name = script_name,
-        upstream = name,
-        tags = ["no-ide"]
-    )
-    sh_binary(
-        name = name + "_view_result",
-        srcs = [script_name],
-        use_bash_launcher = True,
-        tags = ["no-ide"]
-    )
-
-pipeline_step = macro(
-    doc = "Macro for running a generic CLI command on a DaVinci project. The macro automatically adds target `<name>_view_result` for viewing the result in DaVinci Configurator Classic Version 6 GUI tool.",
-    inherit_attrs = dvcfg_cli_step,
-    implementation = _pipeline_step_impl
-)
-
 def _create_project_script_impl(ctx):
-    return _write_script(ctx, '"{dvcfg}" project create -b "{bsw_pkg}" --project-name {dvjson_name} -o "$BUILD_WORKSPACE_DIRECTORY/{folder}"',
-        { "bsw_pkg": ctx.attr.bsw_pkg },
-        dvcfg = ctx.toolchains[":toolchain_type"].cfg6.cli,
-        dvjson_name = ctx.attr.dvjson_name,
-        folder = ctx.label.package
-    )
+    cli = ctx.toolchains[":toolchain_type"].cfg6.cli
+    dict = { "dvcfg": cli, "-b": ctx.attr.bsw_pkg, "name": ctx.attr.dvjson_name, "folder": ctx.label.package }
+    script = _script(ctx, ctx.label.name + ".sh", '{dvcfg} project create {-b} --project-name {name} -o "$BUILD_WORKSPACE_DIRECTORY/{folder}"', False, dict)
+    return [DefaultInfo(executable = script, runfiles = ctx.runfiles(files = _input_files(dict)).merge(cli[DefaultInfo].default_runfiles))]
 
 create_project_script = rule(
     attrs = {
@@ -1242,11 +497,8 @@ dvjson(
 )
 ```
 
-it provides the following targets:
-
-- `<name>_create`: executable bazel target for initially creating the project inside the package via `bazel run //:<name>_create`.
-- `<name>.dvjson`: the `.dvjson` file of the project (once it has been created), e.g. for use in `dvjson` attribute of module extension `ecu_config.project`.
-""",
+Now `bazel run //:myecu` will create a new project
+See [hybrid](#hybrid) on how to use this project in the pipeline.""",
     attrs = {
         "bsw_pkg": attr.label(doc = "The BSW package folder.", allow_single_file = True, mandatory = True)
     },
@@ -1256,33 +508,23 @@ it provides the following targets:
 _dbg_script_postfix = "_dbg_script"
 
 def _app_design_dbg_script_impl(ctx):
-    command = '''
+    command = """
 if [[ "${{EAC_DEBUG-}}" == "true" ]]; then
     export DVCFG_JVM_ARGS='-agentlib:jdwp=transport=dt_socket,server=y,suspend=n -Djdk.attach.allowAttachSelf=true'
     export IDE_INTEGRATION_PORT="${{EAC_IDE_PORT-}}"
 fi
-
 _term() {{
     kill "$child" 2>/dev/null
 }}
 trap _term SIGINT
-
-"{xpro}" run-script -i "{input}" ''' + ('-e "{evs}" ' if len(ctx.attr.srcs) > 1 else "") + '''-l "{jar}" -t "{task}" "$BUILD_WORKSPACE_DIRECTORY/{pkg}/{name}.arxml" &
-
+{xpro} run-script -i {input} {-l} -t '{task}' "$BUILD_WORKSPACE_DIRECTORY/{pkg}/{name}.arxml" &
 child=$!
 wait "$child"
-'''
-    return _write_script(ctx, command,
-        {
-            "input": ctx.attr.srcs[0],
-            "evs": ctx.attr.srcs[1:],
-            "jar": ctx.attr.tasks[0]
-        },
-        xpro = ctx.toolchains[":toolchain_type"].cfg6.xpro,
-        task = ctx.attr.task_name,
-        pkg = ctx.label.package,
-        name = ctx.label.name[:-len(_dbg_script_postfix)]
-    )
+"""
+    xpro = ctx.toolchains[":toolchain_type"].cfg6.xpro
+    dict = { "xpro": xpro, "input| -e ": ctx.attr.srcs, "-l": ctx.attr.tasks, "task": ctx.attr.task_name, "pkg": ctx.label.package, "name": ctx.label.name[:-len(_dbg_script_postfix)] }
+    script = _script(ctx, ctx.label.name + ".sh", command, False, dict)
+    return [DefaultInfo(executable = script, runfiles = ctx.runfiles(files = _input_files(dict)).merge(xpro[DefaultInfo].default_runfiles))]
 
 _APP_DESIGN_ATTRS = dict(
     _SCRIPT_PATCHED_ARXML_ATTRS,
@@ -1339,4 +581,513 @@ app_design = macro(
         pai_version = attr.string(mandatory = True, configurable = False)
     ),
     implementation = _app_design_impl
+)
+
+def _expand_file_paths_impl(ctx):
+    t = ctx.file.template
+    out = ctx.actions.declare_file(ctx.label.name + (t.extension if t.extension and len(t.extension) < len(t.basename) - 1 else ""))
+    ctx.actions.expand_template(
+        t,
+        out,
+        substitutions = { k: single_file_from_target(v).path.replace("\\", "/") for k, v in ctx.attr.substitutions.items() }
+    )
+    return [DefaultInfo(files = depset([out]))]
+
+expand_file_paths = rule(
+    doc = "Expand file paths in a template.",
+    attrs = {
+        "template": attr.label(doc = "The UTF-8 encoded template file.", allow_single_file = True),
+        "substitutions": attr.string_keyed_label_dict(doc = "Files whose paths to expand in the template.", allow_files = True)
+    },
+    implementation = _expand_file_paths_impl,
+)
+
+def _to_paths(ctx, target, build):
+    paths = [p for t in target for p in ctx.expand_location("$({} {})".format("locations" if build else "rlocationpaths", t.label), [t]).split(" ")] if type(target) == _LIST_TYPE else ctx.expand_location("$({} {})".format("locations" if build else "rlocationpaths", target.label), [target]).split(" ")
+    result = []
+    tmp = ""
+    for s in paths:
+        p = tmp + " " + s if tmp else s
+        if p.startswith("'"):
+            if p.endswith("'") and not p.endswith("\\'"):
+                result.append(p if build else "$(rlocation {})".format(p))
+                tmp = ""
+            else:
+                tmp = p
+        else:
+            result.append(p if build else "$(rlocation {})".format(p))
+    return result
+
+def _item(ctx, item, build):
+    k, v = item
+    if type(v) == _PRIMITIVE_TYPE:
+        return item
+    if k.startswith("-"):
+        return (k, k + " " + (" " + k + " ").join(_to_paths(ctx, v, build)))
+    key_and_sep = k.split("|")
+    if len(key_and_sep) != 2:
+        key_and_sep = [k, " "]
+    return (key_and_sep[0], key_and_sep[1].join(_to_paths(ctx, v, build)))
+
+def _format_dict(ctx, dict, build):
+    return { k: v for k, v in [_item(ctx, i, build) for i in dict.items()] }
+
+def _files(target):
+    return [f for t in target for f in t[DefaultInfo].files.to_list()] if type(target) == _LIST_TYPE else target[DefaultInfo].files.to_list()
+
+def _input_files(dict):
+    return [f for v in dict.values() if type(v) != _PRIMITIVE_TYPE for f in _files(v)]
+
+_PREPARE_FOLDER = "rm -rf '{_parent_dir_}'\nmkdir -p '{project_dir}'\n"
+_UNTAR = "tar --force-local -zxf {_upstream_} -C '{project_dir}'\n"
+_COMMON_TAR_OPTS = "--force-local --exclude '*.~lock' --exclude 'dvcfg.local.properties'"
+_TAR = "\ntar " + _COMMON_TAR_OPTS + " -zcf '{_parent_dir_}/dvproject.tar.gz' -C '{project_dir}' .\nrm -rf '{project_dir}'"
+_STOP = '\n{dvcfg} stop {-p} --force'
+
+def _script(ctx, name, cmd, build, dict):
+    script = ctx.actions.declare_file(name)
+    ctx.actions.write(script, 'set -euo pipefail\n' + cmd.format(**_format_dict(ctx, dict, build)), is_executable = True)
+    return script
+
+def _from_scratch_impl(ctx):
+    out = ctx.actions.declare_file(ctx.label.name + "/dvproject.tar.gz")
+    cfg6 = ctx.toolchains[":toolchain_type"].cfg6
+    cmd = _PREPARE_FOLDER + "{dvcfg} project create {-b} --project-name {name} -o '{project_dir}'"
+    dict = { "_parent_dir_": out.dirname, "project_dir": out.dirname + "/_", "dvcfg": cfg6.cli, "-b": ctx.attr.bsw_pkg, "name": ctx.label.name }
+    if ctx.attr.settings:
+        cmd += "\n'{patcher}' '{project_dir}/{name}.dvjson' {settings}"
+        dict.update(patcher = cfg6.settings_patcher.executable.path, settings = ctx.attr.settings)
+    script = _script(ctx, ctx.label.name + "/script.sh", cmd + _TAR, True, dict)
+    ctx.actions.run_shell(outputs = [out], inputs = _input_files(dict), tools = _files(cfg6.cli) + [script] + ([cfg6.settings_patcher] if ctx.attr.settings else []), command = "./" + script.path, use_default_shell_env = True, env = _exclusive_label(ctx))
+    return [DefaultInfo(files = depset([out])), DvProjectProvider(dvjson = ctx.label.name + ".dvjson", bsw_pkg = ctx.attr.bsw_pkg)]
+
+from_scratch = rule(
+    doc = "Create a new DaVinci Configurator Classic Version 6 project.",
+    attrs = _BSW_PKG_ATTR | {
+        "settings": attr.label(doc = """Optional JSON file for overriding default project settings.
+E.g., for setting `allowMergeConflicts` in the `General.json` file to `true` and removing the mapping for the `Dcm` module from the `moduleDefinitionMappings` array in the `Ifp.json` file:
+
+```json
+{
+  "general": {
+    "allowMergeConflicts": true
+  },
+  "ifp": {
+    "moduleDefinitionMappings": [
+      { "__delete__": true, "moduleConfigName": "Dcm" }
+    ]
+  }
+}
+```
+
+Each object-typed property is merged into the settings file referenced by the .dvjson file with the corresponding key:
+
+- Object-typed properties are merged recursively.
+- Primitive-typed properties are overwritten with the given value (use `null` to delete the property).
+- Arrays with primitive-typed elements are merged as duplicate-free unions.
+- Objects in arrays are identified by a key property:
+  - In `General.json`, `useCases` are identified by their `vector` property.
+  - In `Ifp.json`, `moduleDefinitionMappings` are identified by their `moduleConfigName` (see example) and `comControllerMappings` by their `clusterPath`.
+  - Use the `__delete__` property (see example) to remove an object from the array.
+
+Some settings might point to generated files. Use [expand_file_paths](#expand_file_paths) for these.""", allow_single_file = [".json"])
+    },
+    implementation = _from_scratch_impl,
+    toolchains = [":toolchain_type"]
+)
+
+def _hybrid_impl(ctx):
+    dvjson_target = [t for t in ctx.attr.srcs if [f for f in t[DefaultInfo].files.to_list() if f.extension == "dvjson"]]
+    if len(dvjson_target) != 1:
+        fail("Expected a single .dvjson file in srcs.")
+    dvjson_target = dvjson_target[0]
+    if dvjson_target.label.repo_name:
+        fail("The .dvjson file must reside in the workspace.")
+    dvjson_file = [f for f in dvjson_target[DefaultInfo].files.to_list() if f.extension == "dvjson"]
+    if len(dvjson_file) != 1:
+        fail("Expected a single .dvjson file in srcs.")
+    dvjson_file = dvjson_file[0]
+    if not dvjson_file.is_source:
+        fail("The .dvjson files must be a source file and no generated target.")
+    prefix = dvjson_file.dirname + "/"
+    if [f for f in ctx.files.srcs if not f.path.startswith(prefix)]:
+        fail("All srcs must be contained below the folder containing the .dvjson file.")
+    out = ctx.actions.declare_file(ctx.label.name + "/dvproject.tar.gz")
+    exclude = (" --exclude '" + "' --exclude '".join(ctx.attr.exclude) + "'") if ctx.attr.exclude else ""
+    copy = "tar " + _COMMON_TAR_OPTS + exclude + " -cf - -C '{source}' . | tar --force-local -xf - -C '{project_dir}'"
+    script = _script(ctx, ctx.label.name + "/script.sh", _PREPARE_FOLDER + copy + _TAR, True, { "_parent_dir_": out.dirname, "project_dir": out.dirname + "/_", "source": dvjson_file.dirname })
+    ctx.actions.run_shell(outputs = [out], inputs = ctx.files.srcs, tools = [script], command = "./" + script.path, use_default_shell_env = True)
+    return [DefaultInfo(files = depset([out])), DvProjectProvider(dvjson = dvjson_file.basename, bsw_pkg = ctx.attr.bsw_pkg, hybrid = dvjson_file.dirname)]
+
+hybrid = rule(
+    doc = "Use an existing DaVinci Configurator Classic Version 6 project.",
+    attrs = _BSW_PKG_ATTR | {
+        "srcs": attr.label_list(doc = """The files of an existing project.
+
+- The .dvjson file (always required).
+- All settings .json files (referenced by the .dvjson file).
+
+All of these files must be contained below the parent folder of the .dvjson file.
+Modifications to any of these files invalidate the target.
+
+Usually a `hybrid` target is extended using [apply_command](#apply_command).
+If the project folder contains files, that are modified through different tools,
+these files should be listed as inputs of the `apply_command` target that needs to re-run after the modification.
+
+Typically, this is the `project update` command. I.e., if your workflow requires modifying user ECUC files
+(in `./Config/EcuConfig`) through some other tool capture all relevant files in some label and list them as an input to the command:
+
+```starlark
+filegroup(name = "user_ecuc", srcs = glob(["Config/EcuConfig/**"]), visibility = ["//visibility:public"])
+
+apply_command(
+    name = "project",
+    project = ":upstream",
+    command = '{dvcfg} project update {-p} {-b}',
+    inputs = { "user_ecuc": ":user_ecuc" }
+)
+```
+
+Even if the files are not used in the command they will invalidate the target when getting modified.""", allow_files = True),
+        "exclude": attr.string_list(doc = "Optional GNU tar exclude patterns listing all project files/folders that should be excluded from the target (no trailing slashes for folders).", default = ["./Output"])
+    },
+    implementation = _hybrid_impl
+)
+
+def _check_keys(built_in, user):
+    clashes = [k for k in user.keys() if k in built_in]
+    clashes and fail("The following keys are reserved for internal purposes: {}. Please choose different ones.".format(", ".join(clashes)))
+    return built_in | user
+
+_COMMAND_ATTRS = {
+    "command": attr.string(doc = """Command to run on the project (see [run_shell](https://bazel.build/rules/lib/builtins/actions#run_shell)).
+Use `{dvcfg}` for the DaVinci Configurator Classic Version 6 executable, `{-p}` for the project and `{-b}` for the BSW package.
+E.g., the command to update the project looks like this: `{dvcfg} project update {-b} {-p}`.
+Separate multiple commands to run sequentially with `\\n` (newline).""", mandatory = True),
+    "inputs": attr.string_keyed_label_dict(doc = """Input files used in `command`. The following rules apply:
+
+- Dictionary keys starting with `-` (minus): `inputs = { "-f": "<label>" }` and `command = '... {-f} ...'` yield a resulting command line like this: `... -f "<file1>" -f "{file2}" ...` (i.e., all files are listed with the preceeding switch).
+- Dictionary keys containing `|` (pipe): `inputs = { "files|,": "<label>" }` and `command = '... -f {files} ...'` yield a resulting command line like this: `... -f "<file1>","{file2}" ...` (i.e, all files are listed, joined by the given separator).
+- Pipe and separator are optional defaulting to a single space separator, i.e.: `inputs = { "files": "<label>" }` and `command = 'import {files}'` yield a resulting command line like this: `import "<file1>" "{file2}" ...`.""", allow_files = True)
+}
+
+def _is_update(s):
+    s = s.lstrip("\"' \t")
+    if not s.startswith("project"):
+        return False
+    s = s[7:]
+    remainder = s.lstrip(" \t")
+    return len(remainder) < len(s) and remainder.startswith("update")
+
+def _is_hybrid_update(ctx):
+    return hasattr(ctx.attr.project[DvProjectProvider], "hybrid") and [c for c in ctx.attr.command.split("{dvcfg}") if _is_update(c)]
+
+def _apply_dict(ctx, out, project):
+    p = project[DvProjectProvider]
+    return {
+        "_upstream_": project,
+        "_parent_dir_": out.dirname,
+        "project_dir": out.dirname + "/_",
+        "dvcfg": ctx.toolchains[":toolchain_type"].cfg6.cli,
+        "-b": p.bsw_pkg,
+        "-p": "-p '" + out.dirname + "/_/" + p.dvjson + "'",
+    }
+
+def _apply_command_impl(ctx):
+    p = ctx.attr.project[DvProjectProvider]
+    out = ctx.actions.declare_file(ctx.label.name + "/dvproject.tar.gz")
+    hybrid = "cp -r '{}/.' '{{project_dir}}'\n".format(p.hybrid) if _is_hybrid_update(ctx) else ""
+    dict = _check_keys(_apply_dict(ctx, out, ctx.attr.project), ctx.attr.inputs)
+    script = _script(ctx, ctx.label.name + "/script.sh", _PREPARE_FOLDER + hybrid + _UNTAR + ctx.attr.command + _STOP + _TAR, True, dict)
+    ctx.actions.run_shell(outputs = [out], inputs = _input_files(dict), tools = _files(ctx.toolchains[":toolchain_type"].cfg6.cli) + [script], command = "./" + script.path, env = ctx.attr.env, use_default_shell_env = True)
+    return [DefaultInfo(files = depset([out])), p]
+
+apply_command = rule(
+    doc = """Extend a project by running a command on it (see [here](https://help.vector.com/davinci-configurator-classic/en/latest/user-manual/references/cli/index.html) for available commnds). E.g.:
+
+- `{dvcfg} project update {-b} {-p}` updates the project (e.g. on input file changes).
+- `{dvcfg} project validate {-b} {-p} --fail-on NONE` creates a validation report. [project_file](#project_file) with `path = "Output/Log/ValidationOutput.json"` yields the report.
+- `{dvcfg} project generate {-b} {-p}` generates BSW code. [project_folder](#project_folder) with `path = "Output/Source/GenData"` yields the generation result.
+- `{dvcfg} project generate-swct {-b} {-p}` generates SWC templates. [project_folder](#project_folder) with `path = "Output/Source/Templates"` yields the generation result.
+- `{dvcfg} automation run {-b} {-p} {-l} -t MyTask` runs a PAI task (see `inputs` on how to provide the script location `{-l}`).
+- `{dvcfg} export run {-b} {-p} -o "{project_dir}" -e everything` exports the entire AUTOSAR model. [project_file](#project_file) with `path = "Exported_everything.arxml"` yields the result.
+
+`{project_dir}` is expanded to the project folder (unquoted; useful for specifying output locations).""",
+    attrs = {
+        "project": attr.label(doc = "The project to which to apply the command.", allow_single_file = True, providers = [DvProjectProvider], mandatory = True),
+        "env": attr.string_dict(doc = "Optional environment variables.")
+    } | _COMMAND_ATTRS,
+    implementation = _apply_command_impl,
+    toolchains = [":toolchain_type"]
+)
+
+def _run_command_script_impl(ctx):
+    cli = ctx.toolchains[":toolchain_type"].cfg6.cli
+    cmd = ctx.attr.command
+    dict = {
+        "_upstream_": ctx.attr.project,
+        "_parent_dir_": ctx.label.name,
+        "project_dir": ctx.label.name + "/_",
+        "dvcfg": cli
+    }
+    if ctx.attr.project:
+        p = ctx.attr.project[DvProjectProvider]
+        dvjson = ctx.label.name + "/_/" + p.dvjson
+        if hasattr(p, "hybrid"):
+            hybrid_dir = "$BUILD_WORKSPACE_DIRECTORY/{}".format(p.hybrid)
+            dvjson = hybrid_dir + "/" + p.dvjson
+            dict = dict | { "hybrid_dir": hybrid_dir }
+            cmd = 'cp -r "{project_dir}/." "{hybrid_dir}"\n' + cmd.replace("{project_dir}", "{hybrid_dir}")
+        dict = dict | { "-b": p.bsw_pkg, "-p": "-p '{}'".format(dvjson) }
+    dict = _check_keys(dict, ctx.attr.inputs)
+    script = _script(ctx, ctx.label.name + "/script.sh", ctx.attr.prefix + cmd, False, dict)
+    return [DefaultInfo(executable = script, runfiles = ctx.runfiles(files = _input_files(dict)).merge(cli[DefaultInfo].default_runfiles))]
+
+run_command_script = rule(
+    attrs = {
+        "project": attr.label(doc = "The project on which to run the command. Only required if the command needs a project.", allow_single_file = True, providers = [DvProjectProvider]),
+        "prefix": attr.string(default = _PREPARE_FOLDER + _UNTAR)
+    } | _COMMAND_ATTRS,
+    implementation = _run_command_script_impl,
+    toolchains = [":toolchain_type"]
+)
+
+def _run_command_impl(name, project, command, inputs, **kwargs):
+    script_name = name + "_script"
+    run_command_script(
+        name = script_name,
+        project = project,
+        command = command,
+        inputs = inputs,
+        prefix = kwargs.get("prefix")
+    )
+    sh_binary(
+        name = name,
+        srcs = [script_name],
+        use_bash_launcher = True,
+        **{ k: v for k, v in kwargs.items() if k != "prefix" }
+    )
+
+run_command = macro(
+    doc = """Run a command on a project (see [here](https://help.vector.com/davinci-configurator-classic/en/latest/user-manual/references/cli/index.html) for available commnds). When running on an hybrid project, the resulting project is written back to the workspace. E.g.:
+
+- `{dvcfg} project validate {-b} {-p} --fail-on NONE` creates a validation report.
+- `{dvcfg} project generate {-b} {-p}` generates BSW code.
+- `{dvcfg} project generate-swct {-b} {-p}` generates SWC templates.
+- `{dvcfg} automation run {-b} {-p} {-l} -t MyTask` runs a PAI task (see `inputs` on how to provide the script location `{-l}`).
+- `{dvcfg} export run {-b} {-p} -o "$BUILD_WORKSPACE_DIRECTORY/export" -e everything` exports the entire AUTOSAR model.
+
+Use `$BUILD_WORKSPACE_DIRECTORY` to specify locations relative to the workspace.""",
+    inherit_attrs = run_command_script,
+    attrs = {
+        "env": attr.string_dict(doc = "Optional environment variables."),
+        "prefix": None
+    },
+    implementation = _run_command_impl
+)
+
+def _project_file_impl(ctx):
+    out = ctx.actions.declare_file(ctx.attr.out or ctx.label.name)
+    path = ctx.attr.path.replace("\\", "/")
+    if not path.startswith("./"):
+        path = "./" + path
+    ctx.actions.run_shell(outputs = [out], inputs = [ctx.file.project], command = "tar --force-local -xzOf '{}' '{}' > '{}'".format(ctx.file.project.path, path, out.path))
+    return [DefaultInfo(files = depset([out]))]
+
+project_file = rule(
+    doc = "Get a file from a project.",
+    attrs = {
+        "project": attr.label(doc = "The project from which to get the file.", allow_single_file = True, mandatory = True),
+        "path": attr.string(doc = "The path of the file relative to the project folder.", mandatory = True),
+        "out": attr.string(doc = "Optional name for the created file (defaults to label name).")
+    },
+    implementation = _project_file_impl
+)
+
+def _project_folder_impl(ctx):
+    out = ctx.actions.declare_directory(ctx.label.name)
+    path = ctx.attr.path.replace("\\", "/")
+    if path and not path.startswith("./"):
+        path = "./" + path
+    cmd = "tar --force-local -xzf '{}' -C '{}' --strip-components {} '{}'".format(ctx.file.project.path, out.path, path.count("/") + 1, path)
+    ctx.actions.run_shell(outputs = [out], inputs = [ctx.file.project], command = cmd)
+    return [DefaultInfo(files = depset([out]))]
+
+project_folder = rule(
+    doc = "Get a folder from a project.",
+    attrs = {
+        "project": attr.label(doc = "The project from which to get the folder.", allow_single_file = True, mandatory = True),
+        "path": attr.string(doc = "The path of the folder relative to the project folder.")
+    },
+    implementation = _project_folder_impl
+)
+
+def _list_project_files_script_impl(ctx):
+    dict = { "project": ctx.attr.project }
+    script = _script(ctx, ctx.label.name + ".sh", "tar --force-local -tzf {project} | sed -e '/\\/$/d' -e 's|^\\./||'", False, dict)
+    return [DefaultInfo(executable = script, runfiles = ctx.runfiles(files = _input_files(dict)))]
+
+list_project_files_script = rule(
+    attrs = { "project": attr.label(doc = "The project whose files to list.", allow_single_file = True, mandatory = True) },
+    implementation = _list_project_files_script_impl
+)
+
+def _list_project_files_impl(name, project, **kwargs):
+    script_name = name + "_script"
+    list_project_files_script(
+        name = script_name,
+        project = project
+    )
+    sh_binary(
+        name = name,
+        srcs = [script_name],
+        use_bash_launcher = True,
+        **kwargs
+    )
+
+list_project_files = macro(
+    doc = "List all files contained in a project (paths relative to the project folder, usable as `path` in [project_file](#project_file)). Run with `bazel run`.",
+    inherit_attrs = list_project_files_script,
+    implementation = _list_project_files_impl
+)
+
+_COPY = """_copy() {{
+  local dst="$2"
+  if [[ "$dst" == */ ]]; then
+    dst="$dst$(basename "$1")"
+  fi
+  if [[ -d "$1" ]]; then
+    mkdir -p "$dst"
+    cp -R "$1/." "$dst"
+  else
+    mkdir -p "$(dirname "$dst")"
+    cp "$1" "$dst"
+  fi
+}}"""
+
+def _copy_files_script_impl(ctx):
+    cmd = _COPY
+    for name, value in ctx.attr.env.items():
+        cmd += '\n{}="{}"'.format(name, value.replace('"', '\\"'))
+    dict = {}
+    i = 0
+    for target, dst in ctx.attr.from_to.items():
+        dst = dst.replace("\\", "/")
+        if not dst.endswith("/") and len(target[DefaultInfo].files.to_list()) != 1:
+            fail("Expected exactly one file/folder from {} for destination '{}' but got {} (use a trailing '/' to copy into a folder).".format(target.label, dst, len(target[DefaultInfo].files.to_list())))
+        source = "src_" + str(i)
+        i += 1
+        dict.update([(source, target)])
+        cmd += '\n_copy {{{}}} {}'.format(source, ("'{}'" if _is_absolute(dst) else '"$BUILD_WORKSPACE_DIRECTORY/{}"').format(dst))
+    script = _script(ctx, ctx.label.name + ".sh", cmd, False, dict)
+    return [DefaultInfo(executable = script, runfiles = ctx.runfiles(files = _input_files(dict)))]
+
+copy_files_script = rule(
+    attrs = {
+        "from_to": attr.label_keyed_string_dict(doc = """Files/folders to copy (label -> destination). E.g.:
+
+```starlark
+files = {
+    ":file": "destination/file.txt",        # file -> to given path
+    ":file": "destination/",                # file -> into given folder
+    ":folder": "destination/",              # folder -> into given folder (yields gen/<folder name>)
+    ":folder": "destination",               # folder -> to given path
+}
+```
+
+- A destination ending with `/` denotes a folder to copy into, otherwise the path of the file/folder to create (requires the label to provide a single file/folder).
+- Relative destinations are resolved relative to the workspace root.
+- Existing destination files are overwritten, existing destination folders are merged.""", allow_files = True, allow_empty = False, mandatory = True),
+        "env": attr.string_dict(doc = "Optional environment variables.")
+    },
+    implementation = _copy_files_script_impl
+)
+
+def _copy_files_impl(name, from_to, env, **kwargs):
+    script_name = name + "_script"
+    copy_files_script(
+        name = script_name,
+        from_to = from_to,
+        env = env
+    )
+    sh_binary(
+        name = name,
+        srcs = [script_name],
+        use_bash_launcher = True,
+        **kwargs
+    )
+
+copy_files = macro(
+    doc = "Copy files/folders (e.g. build results) to the workspace or any other location.",
+    inherit_attrs = copy_files_script,
+    implementation = _copy_files_impl
+)
+
+def _open_impl(evo1, **kwargs):
+    run_command(command = ("'" + evo1 + "'" if evo1 else "{dvcfg} project start") + " {-b} {-p}\necho 'Project has been opened in DaVinci Configurator Classic Version 6.'\nread -n 1 -s -r -p 'Press any key to continue...'\necho", **kwargs)
+
+open = macro(
+    doc = "Open a project in DaVinci Configurator Classic Version 6.",
+    attrs = {
+        "project": attr.label(doc = "The project to open.", allow_single_file = True, mandatory = True),
+        "evo1": attr.string(doc = "Optional absolute path to a DaVinci Configurator Classic Version 6 Evo1 GUI launcher.", configurable = False)
+    },
+    implementation = _open_impl
+)
+
+def _diff_impl(ctx):
+    out = ctx.actions.declare_file(ctx.label.name + "/" + ctx.label.name + ".jsonl")
+    dict = _apply_dict(ctx, out, ctx.attr.ours) | {
+        "_theirs_": ctx.attr.theirs,
+        "theirs_dir": out.dirname + "/__",
+        "-t": "-t '" + out.dirname + "/__/" + ctx.attr.theirs[DvProjectProvider].dvjson + "'",
+    }
+    script = _script(ctx, ctx.label.name + "/script.sh", _PREPARE_FOLDER + _UNTAR + "mkdir -p '{theirs_dir}'\n" + _UNTAR.replace("_upstream_", "_theirs_").replace("project_dir", "theirs_dir") + "{dvcfg} compare report {-b} {-p} {-t} -f JSONL" + _STOP + "\ncp '{project_dir}/Output/Log/DiffReport.jsonl' '{_parent_dir_}/" + ctx.label.name + ".jsonl'\nrm -rf '{project_dir}'\nrm -rf '{theirs_dir}'", True, dict)
+    ctx.actions.run_shell(outputs = [out], inputs = _input_files(dict), tools = _files(ctx.toolchains[":toolchain_type"].cfg6.cli) + [script], command = "./" + script.path, use_default_shell_env = True)
+    return [DefaultInfo(files = depset([out])), ctx.attr.ours[DvProjectProvider]]
+
+diff = rule(
+    doc = "Compare two projects.",
+    attrs = {
+        "ours": attr.label(doc = "Our project.", mandatory = True, providers = [DvProjectProvider]),
+        "theirs": attr.label(doc = "Their project.", mandatory = True, providers = [DvProjectProvider]),
+    },
+    implementation = _diff_impl,
+    toolchains = [":toolchain_type"]
+)
+
+def _eac_dev_impl(jar, arg, tags, **kwargs):
+    _run_command_impl(**(kwargs | {
+        "prefix": 'if [[ "${{EAC_SPAWN-}}" == \'true\' ]]; then\n' + _PREPARE_FOLDER + _UNTAR + 'fi\n',
+        "command": '''export DVCFG_JVM_ARGS='-agentlib:jdwp=transport=dt_socket,server=y,suspend=n -Djdk.attach.allowAttachSelf=true'
+export DVCFG_TIMEOUT=300
+export DVCFG_BUILD_SYSTEM_PATH="$BUILD_WORKSPACE_DIRECTORY/''' + native.package_name() + '''"
+REST=''
+if [[ "${{EAC_SPAWN-}}" != 'true' ]]; then
+    REST+=" {-c}"''' + arg + '''
+fi
+REST+=" --ide-integration-port ${{EAC_IDE_PORT--2 --no-undo}}"
+if [[ "${{EAC_DEBUG-}}" == 'true' ]]; then
+    REST+=' --debug'
+fi
+{dvcfg} eac {-b} {-p}$REST
+''' + _COPY + '''
+if [[ "${{EAC_SPAWN-}}" != 'true' ]]; then
+    _copy "{project_dir}/Output/Log/EaC" "$BUILD_WORKSPACE_DIRECTORY/.eac-run-artifacts/$(date '+%Y-%m-%d_%H-%M-%S')"
+fi''',
+        "inputs": { "-c": jar },
+        "tags": tags + ["EAC_SPAWN"]
+    }))
+
+eac_dev = macro(
+    doc = "Run/Debug EaC in an IDE.",
+    inherit_attrs = run_command,
+    attrs = {
+        "jar": attr.label(doc = "EaC .jar file to run/debug.", mandatory = True, configurable = False),
+        "arg": attr.string(doc = "Optional command line argument to call the code with (use [encode_eac_arg](#encode_eac_arg)).", configurable = False),
+        "tags": attr.string_list(configurable = False),
+        "command": None,
+        "inputs": None
+    },
+    implementation = _eac_dev_impl
 )
