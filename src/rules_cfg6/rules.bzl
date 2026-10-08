@@ -686,7 +686,7 @@ E.g., for setting `allowMergeConflicts` in the `General.json` file to `true` and
 Each object-typed property is merged into the settings file referenced by the .dvjson file with the corresponding key:
 
 - Object-typed properties are merged recursively.
-- Primitive-typed properties are overwritten with the patch value (use `null` to delete the property).
+- Primitive-typed properties are overwritten with the given value (use `null` to delete the property).
 - Arrays with primitive-typed elements are merged as duplicate-free unions.
 - Objects in arrays are identified by a key property:
   - In `General.json`, `useCases` are identified by their `vector` property.
