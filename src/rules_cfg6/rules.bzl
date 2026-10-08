@@ -274,11 +274,11 @@ merged_extract = rule(
 def _variant_extract_impl(ctx):
     xpro = ctx.toolchains[":toolchain_type"].cfg6.xpro
     out = ctx.actions.declare_file(ctx.label.name + ".arxml")
-    dict = { "_xpro": xpro, "-m": ctx.attr.config, "_evs|,": ctx.attr.evs, "_out": out.path }
+    dict = { "_xpro": xpro, "-m": ctx.attr.config, "_evs|,": ctx.attr.evs, "_out": out.path } | ctx.attr.srcs
     cmd = '{_xpro} variant-merge {-m} -e {_evs} '
     for variant in ctx.attr.srcs.keys():
         cmd += '-f {v}={{{v}}} '.format(v = variant)
-    script = _script(ctx, ctx.label.name + ".sh", cmd + '"{_out}"', True, dict | ctx.attr.srcs)
+    script = _script(ctx, ctx.label.name + ".sh", cmd + '"{_out}"', True, dict)
     ctx.actions.run_shell(outputs = [out], inputs = _input_files(dict), tools = _files(xpro) + [script], command = "./" + script.path, env = _exclusive_label(ctx), use_default_shell_env = True)
     return [DefaultInfo(files = depset([out]))]
 
@@ -310,23 +310,19 @@ def _task_args(ctx):
 
 def _script_patched_arxml_impl(ctx):
     out = ctx.actions.declare_file(ctx.label.name + ".arxml")
-    scripts = { single_file_from_target(task): True for task in ctx.attr.tasks }.keys()
     file_args = [single_file_from_target(target) for task in ctx.attr.tasks for target in task[ScriptTaskProvider].file_args.values()]
-    ctx.actions.run_shell(
-        outputs = [out],
-        inputs =  scripts + file_args + ctx.files.srcs,
-        command = '"{xpro}" run-script -i "{src}"{evs} -l "{scripts}" -t "{tasks}"{args} "{out}"'.format(
-            xpro = ctx.toolchains[":toolchain_type"].cfg6.xpro,
-            src = ctx.files.srcs[0].path,
-            evs =  ' -e "{}"'.format('","'.join([file.path for file in ctx.files.srcs[1:]])) if len(ctx.files.srcs) > 1 else "",
-            scripts = '","'.join({single_file_from_target(task).path: True for task in ctx.attr.tasks}.keys()),
-            tasks = '","'.join([_task_name(task) for task in ctx.attr.tasks]),
-            args = _task_args(ctx),
-            out = out.path
-        ),
-        env = _exclusive_label(ctx),
-        use_default_shell_env = True
-    )
+    xpro = ctx.toolchains[":toolchain_type"].cfg6.xpro
+    dict = {
+        "xpro": xpro,
+        "src": ctx.files.srcs[0].path,
+        "evs":  " -e '{}'".format("','".join([file.path for file in ctx.files.srcs[1:]])) if len(ctx.files.srcs) > 1 else "",
+        "scripts|,": ctx.attr.tasks,
+        "tasks": "','".join([_task_name(task) for task in ctx.attr.tasks]),
+        "args": _task_args(ctx),
+        "out": out.path
+    }
+    script = _script(ctx, ctx.label.name + ".sh", "{xpro} run-script -i '{src}'{evs} -l '{scripts}' -t '{tasks}'{args} '{out}'", True, dict)
+    ctx.actions.run_shell(outputs = [out], inputs = _input_files(dict) + file_args + ctx.files.srcs, tools = _files(xpro) + [script], command = "./" + script.path, env = _exclusive_label(ctx), use_default_shell_env = True)
     return [DefaultInfo(files = depset([out]))]
 
 _SCRIPT_PATCHED_ARXML_ATTRS = {
@@ -779,6 +775,7 @@ def _is_update(s):
     s = s.lstrip("\"' \t")
     if not s.startswith("project"):
         return False
+    s = s[7:]
     remainder = s.lstrip(" \t")
     return len(remainder) < len(s) and remainder.startswith("update")
 
@@ -825,22 +822,24 @@ apply_command = rule(
 )
 
 def _run_command_script_impl(ctx):
-    p = ctx.attr.project[DvProjectProvider]
     cli = ctx.toolchains[":toolchain_type"].cfg6.cli
     cmd = ctx.attr.command
-    dvjson = ctx.label.name + "/_/" + p.dvjson
     dict = {
         "_upstream_": ctx.attr.project,
         "_parent_dir_": ctx.label.name,
         "project_dir": ctx.label.name + "/_",
         "dvcfg": cli
     }
-    if p and hasattr(p, "hybrid"):
-        hybrid_dir = "$BUILD_WORKSPACE_DIRECTORY/{}".format(p.hybrid)
-        dict = dict | { "hybrid_dir": hybrid_dir }
-        cmd = 'cp -r "{project_dir}/." "{hybrid_dir}"\n' + cmd.replace("{project_dir}", "{hybrid_dir}")
-        dvjson = hybrid_dir + "/" + p.dvjson
-    dict = _check_keys(dict | { "-b": p.bsw_pkg, "-p": '-p "{}"'.format(dvjson) }, ctx.attr.inputs)
+    if ctx.attr.project:
+        p = ctx.attr.project[DvProjectProvider]
+        dvjson = ctx.label.name + "/_/" + p.dvjson
+        if hasattr(p, "hybrid"):
+            hybrid_dir = "$BUILD_WORKSPACE_DIRECTORY/{}".format(p.hybrid)
+            dvjson = hybrid_dir + "/" + p.dvjson
+            dict = dict | { "hybrid_dir": hybrid_dir }
+            cmd = 'cp -r "{project_dir}/." "{hybrid_dir}"\n' + cmd.replace("{project_dir}", "{hybrid_dir}")
+        dict = dict | { "-b": p.bsw_pkg, "-p": "-p '{}'".format(dvjson) }
+    dict = _check_keys(dict, ctx.attr.inputs)
     script = _script(ctx, ctx.label.name + "/script.sh", _PREPARE_FOLDER + _UNTAR + cmd, False, dict)
     return [DefaultInfo(executable = script, runfiles = ctx.runfiles(files = _input_files(dict)).merge(cli[DefaultInfo].default_runfiles))]
 
@@ -1056,6 +1055,7 @@ def _eac_dev_impl(jar, arg, tags, **kwargs):
     run_command(
         command = '''export DVCFG_JVM_ARGS='-agentlib:jdwp=transport=dt_socket,server=y,suspend=n -Djdk.attach.allowAttachSelf=true'
 export DVCFG_TIMEOUT=300
+export DVCFG_BUILD_SYSTEM_PATH="$BUILD_WORKSPACE_DIRECTORY/''' + native.package_name() + '''"
 REST=''
 if [[ "${{EAC_SPAWN-}}" != 'true' ]]; then
     REST+=" {-c}"''' + arg + '''
