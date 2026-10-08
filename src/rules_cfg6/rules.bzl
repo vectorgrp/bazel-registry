@@ -234,6 +234,7 @@ def _exclusive_label(ctx):
     return { "DVCFG_EXCLUSIVE_LABEL": str(ctx.label) }
 
 _PRIMITIVE_TYPE = type("")
+_LIST_TYPE = type([])
 
 def _system_extract_impl(ctx):
     xpro = ctx.toolchains[":toolchain_type"].cfg6.xpro
@@ -606,7 +607,7 @@ expand_file_paths = rule(
 )
 
 def _to_paths(ctx, target, build):
-    paths = ctx.expand_location("$({} {})".format("locations" if build else "rlocationpaths", target.label), [target]).split(" ")
+    paths = [p for t in target for p in ctx.expand_location("$({} {})".format("locations" if build else "rlocationpaths", t.label), [t]).split(" ")] if type(target) == _LIST_TYPE else ctx.expand_location("$({} {})".format("locations" if build else "rlocationpaths", target.label), [target]).split(" ")
     result = []
     tmp = ""
     for s in paths:
@@ -636,7 +637,7 @@ def _format_dict(ctx, dict, build):
     return { k: v for k, v in [_item(ctx, i, build) for i in dict.items()] }
 
 def _files(target):
-    return target[DefaultInfo].files.to_list()
+    return [f for t in target for f in t[DefaultInfo].files.to_list()] if type(target) == _LIST_TYPE else target[DefaultInfo].files.to_list()
 
 def _input_files(dict):
     return [f for v in dict.values() if type(v) != _PRIMITIVE_TYPE for f in _files(v)]
