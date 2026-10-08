@@ -840,11 +840,14 @@ def _run_command_script_impl(ctx):
             cmd = 'cp -r "{project_dir}/." "{hybrid_dir}"\n' + cmd.replace("{project_dir}", "{hybrid_dir}")
         dict = dict | { "-b": p.bsw_pkg, "-p": "-p '{}'".format(dvjson) }
     dict = _check_keys(dict, ctx.attr.inputs)
-    script = _script(ctx, ctx.label.name + "/script.sh", _PREPARE_FOLDER + _UNTAR + cmd, False, dict)
+    script = _script(ctx, ctx.label.name + "/script.sh", ctx.attr.prefix + cmd, False, dict)
     return [DefaultInfo(executable = script, runfiles = ctx.runfiles(files = _input_files(dict)).merge(cli[DefaultInfo].default_runfiles))]
 
 run_command_script = rule(
-    attrs = { "project": attr.label(doc = "The project on which to run the command. Only required if the command needs a project.", allow_single_file = True, providers = [DvProjectProvider]) } | _COMMAND_ATTRS,
+    attrs = {
+        "project": attr.label(doc = "The project on which to run the command. Only required if the command needs a project.", allow_single_file = True, providers = [DvProjectProvider]),
+        "prefix": attr.string(default = _PREPARE_FOLDER + _UNTAR)
+    } | _COMMAND_ATTRS,
     implementation = _run_command_script_impl,
     toolchains = [":toolchain_type"]
 )
@@ -855,13 +858,14 @@ def _run_command_impl(name, project, command, inputs, **kwargs):
         name = script_name,
         project = project,
         command = command,
-        inputs = inputs
+        inputs = inputs,
+        prefix = kwargs.get("prefix")
     )
     sh_binary(
         name = name,
         srcs = [script_name],
         use_bash_launcher = True,
-        **kwargs
+        **{ k: v for k, v in kwargs.items() if k != "prefix" }
     )
 
 run_command = macro(
@@ -876,7 +880,8 @@ run_command = macro(
 Use `$BUILD_WORKSPACE_DIRECTORY` to specify locations relative to the workspace.""",
     inherit_attrs = run_command_script,
     attrs = {
-        "env": attr.string_dict(doc = "Optional environment variables.")
+        "env": attr.string_dict(doc = "Optional environment variables."),
+        "prefix": None
     },
     implementation = _run_command_impl
 )
@@ -1052,8 +1057,9 @@ diff = rule(
 )
 
 def _eac_dev_impl(jar, arg, tags, **kwargs):
-    run_command(
-        command = '''export DVCFG_JVM_ARGS='-agentlib:jdwp=transport=dt_socket,server=y,suspend=n -Djdk.attach.allowAttachSelf=true'
+    _run_command_impl(**(kwargs | {
+        "prefix": 'if [[ "${{EAC_SPAWN-}}" == \'true\' ]]; then\n' + _PREPARE_FOLDER + _UNTAR + 'fi\n',
+        "command": '''export DVCFG_JVM_ARGS='-agentlib:jdwp=transport=dt_socket,server=y,suspend=n -Djdk.attach.allowAttachSelf=true'
 export DVCFG_TIMEOUT=300
 export DVCFG_BUILD_SYSTEM_PATH="$BUILD_WORKSPACE_DIRECTORY/''' + native.package_name() + '''"
 REST=''
@@ -1069,10 +1075,9 @@ fi
 if [[ "${{EAC_SPAWN-}}" != 'true' ]]; then
     _copy "{project_dir}/Output/Log/EaC" "$BUILD_WORKSPACE_DIRECTORY/.eac-run-artifacts/$(date '+%Y-%m-%d_%H-%M-%S')"
 fi''',
-        inputs = { "-c": jar },
-        tags = tags + ["EAC_SPAWN"],
-        **kwargs
-    )
+        "inputs": { "-c": jar },
+        "tags": tags + ["EAC_SPAWN"]
+    }))
 
 eac_dev = macro(
     doc = "Run/Debug EaC in an IDE.",
