@@ -1074,6 +1074,7 @@ fi
 ''' + _COPY + '''
 if [[ "${{EAC_SPAWN-}}" != 'true' ]]; then
     _copy "{project_dir}/Output/Log/EaC" "$BUILD_WORKSPACE_DIRECTORY/.eac-run-artifacts/$(date '+%Y-%m-%d_%H-%M-%S')"
+    rm -rf "{project_dir}/Output/Log/EaC"
 fi''',
         "inputs": { "-c": jar },
         "tags": tags + ["EAC_SPAWN"]
