@@ -1,4 +1,4 @@
 package(default_visibility = ["//visibility:public"])
 filegroup(name = "srcs", srcs = glob(include = ["**"], exclude = ["BUILD.bazel"]))
-exports_files(["ArxmlPatcher.java", "empty.arxml", "EvsExtractor.java", "SettingsPatcher.java"])
+exports_files(["ArxmlPatcher.java", "empty.arxml", "EvsExtractor.java", "SettingsPatcher.java", "Differ.java"])
 toolchain_type(name = "toolchain_type")

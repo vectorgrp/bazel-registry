@@ -76,6 +76,7 @@ def _cfg6_toolchain_impl(ctx):
         xpro = ctx.attr.xpro,
         core = ctx.attr.core,
         settings_patcher = ctx.attr.settings_patcher[DefaultInfo].files_to_run,
+        differ = ctx.attr.differ
     ))]
 
 cfg6_toolchain = rule(
@@ -84,7 +85,8 @@ cfg6_toolchain = rule(
         "cli": attr.label(mandatory = True),
         "xpro": attr.label(mandatory = True),
         "core": attr.label(mandatory = True),
-        "settings_patcher": attr.label(executable = True, mandatory = True, cfg = "exec")
+        "settings_patcher": attr.label(executable = True, mandatory = True, cfg = "exec"),
+        "differ": attr.label(mandatory = True)
     }
 )
 
@@ -779,28 +781,27 @@ def _is_update(s):
     remainder = s.lstrip(" \t")
     return len(remainder) < len(s) and remainder.startswith("update")
 
-def _is_hybrid_update(ctx):
-    return hasattr(ctx.attr.project[DvProjectProvider], "hybrid") and [c for c in ctx.attr.command.split("{dvcfg}") if _is_update(c)]
-
-def _apply_dict(ctx, out, project):
+def _apply_command_impl_internal(ctx, project, cmd, inputs, env):
     p = project[DvProjectProvider]
-    return {
-        "_upstream_": project,
-        "_parent_dir_": out.dirname,
-        "project_dir": out.dirname + "/_",
-        "dvcfg": ctx.toolchains[":toolchain_type"].cfg6.cli,
-        "-b": p.bsw_pkg,
-        "-p": "-p '" + out.dirname + "/_/" + p.dvjson + "'",
-    }
+    out = ctx.actions.declare_file(ctx.label.name + "/dvproject.tar.gz")
+    hybrid = "cp -r '{}/.' '{{project_dir}}'\n".format(p.hybrid) if (hasattr(p, "hybrid") and [c for c in cmd.split("{dvcfg}") if _is_update(c)]) else ""
+    dict = _check_keys(
+        {
+            "_upstream_": project,
+            "_parent_dir_": out.dirname,
+            "project_dir": out.dirname + "/_",
+            "dvcfg": ctx.toolchains[":toolchain_type"].cfg6.cli,
+            "-b": p.bsw_pkg,
+            "-p": "-p '" + out.dirname + "/_/" + p.dvjson + "'",
+        },
+        inputs
+    )
+    script = _script(ctx, ctx.label.name + "/script.sh", _PREPARE_FOLDER + hybrid + _UNTAR + cmd + _STOP + _TAR, True, dict)
+    ctx.actions.run_shell(outputs = [out], inputs = _input_files(dict), tools = _files(ctx.toolchains[":toolchain_type"].cfg6.cli) + [script], command = "./" + script.path, env = env, use_default_shell_env = True)
+    return [DefaultInfo(files = depset([out])), p]
 
 def _apply_command_impl(ctx):
-    p = ctx.attr.project[DvProjectProvider]
-    out = ctx.actions.declare_file(ctx.label.name + "/dvproject.tar.gz")
-    hybrid = "cp -r '{}/.' '{{project_dir}}'\n".format(p.hybrid) if _is_hybrid_update(ctx) else ""
-    dict = _check_keys(_apply_dict(ctx, out, ctx.attr.project), ctx.attr.inputs)
-    script = _script(ctx, ctx.label.name + "/script.sh", _PREPARE_FOLDER + hybrid + _UNTAR + ctx.attr.command + _STOP + _TAR, True, dict)
-    ctx.actions.run_shell(outputs = [out], inputs = _input_files(dict), tools = _files(ctx.toolchains[":toolchain_type"].cfg6.cli) + [script], command = "./" + script.path, env = ctx.attr.env, use_default_shell_env = True)
-    return [DefaultInfo(files = depset([out])), p]
+    return _apply_command_impl_internal(ctx, ctx.attr.project, ctx.attr.command, ctx.attr.inputs, ctx.attr.env)
 
 apply_command = rule(
     doc = """Extend a project by running a command on it (see [here](https://help.vector.com/davinci-configurator-classic/en/latest/user-manual/references/cli/index.html) for available commnds). E.g.:
@@ -1035,25 +1036,47 @@ open = macro(
     implementation = _open_impl
 )
 
-def _diff_impl(ctx):
-    out = ctx.actions.declare_file(ctx.label.name + "/" + ctx.label.name + ".jsonl")
-    dict = _apply_dict(ctx, out, ctx.attr.ours) | {
-        "_theirs_": ctx.attr.theirs,
-        "theirs_dir": out.dirname + "/__",
-        "-t": "-t '" + out.dirname + "/__/" + ctx.attr.theirs[DvProjectProvider].dvjson + "'",
-    }
-    script = _script(ctx, ctx.label.name + "/script.sh", _PREPARE_FOLDER + _UNTAR + "mkdir -p '{theirs_dir}'\n" + _UNTAR.replace("_upstream_", "_theirs_").replace("project_dir", "theirs_dir") + "{dvcfg} compare report {-b} {-p} {-t} -f JSONL" + _STOP + "\ncp '{project_dir}/Output/Log/DiffReport.jsonl' '{_parent_dir_}/" + ctx.label.name + ".jsonl'\nrm -rf '{project_dir}'\nrm -rf '{theirs_dir}'", True, dict)
-    ctx.actions.run_shell(outputs = [out], inputs = _input_files(dict), tools = _files(ctx.toolchains[":toolchain_type"].cfg6.cli) + [script], command = "./" + script.path, use_default_shell_env = True)
-    return [DefaultInfo(files = depset([out])), ctx.attr.ours[DvProjectProvider]]
+def _diff_projects_impl(ctx):
+    return _apply_command_impl_internal(
+        ctx,
+        ctx.attr.ours,
+        "mkdir -p '{_parent_dir_}/__'\n" + _UNTAR.replace("_upstream_", "_theirs_").replace("{project_dir}", "{_parent_dir_}/__") + "{dvcfg} automation run {-b} {-p} {-l} -t diff -a diff -a '\"-t=../__/{theirs}\"'\nrm -rf '{_parent_dir_}/__'",
+        {
+            "_theirs_": ctx.attr.theirs,
+            "theirs": ctx.attr.theirs[DvProjectProvider].dvjson,
+            "-l": ctx.toolchains[":toolchain_type"].cfg6.differ
+        },
+        {}
+    )
 
-diff = rule(
-    doc = "Compare two projects.",
+diff_projects = rule(
     attrs = {
         "ours": attr.label(doc = "Our project.", mandatory = True, providers = [DvProjectProvider]),
         "theirs": attr.label(doc = "Their project.", mandatory = True, providers = [DvProjectProvider]),
     },
-    implementation = _diff_impl,
+    implementation = _diff_projects_impl,
     toolchains = [":toolchain_type"]
+)
+
+def _diff_impl(name, ours, theirs, **kwargs):
+    diff_projects_name = name + "_diff_projects"
+    diff_projects(
+        name = diff_projects_name,
+        ours = ours,
+        theirs = theirs
+    )
+    project_file(
+        name = name,
+        project = diff_projects_name,
+        out = name + ".jsonl",
+        path = "Output/Log/Diff.jsonl",
+        **kwargs
+    )
+
+diff = macro(
+    doc = 'JSONL diff of two projects.',
+    inherit_attrs = diff_projects,
+    implementation = _diff_impl,
 )
 
 def _eac_dev_impl(jar, arg, tags, **kwargs):

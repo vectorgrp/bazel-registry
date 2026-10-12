@@ -1,5 +1,6 @@
 load("@rules_java//java:defs.bzl", "java_import", "java_plugin", "java_library", "java_binary")
 load("@rules_cfg6//:defs.bzl", "cfg6_toolchain")
+load(":defs.bzl", "script_jar")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -9,7 +10,7 @@ _cfg6_data = glob(["_/**"])
 filegroup(name = "cli", srcs = ["_/dvcfg.exe"], data = _cfg6_data, visibility = ["//visibility:private"])
 filegroup(name = "xpro", srcs = ["_/ecuxpro/ecuxpro.exe"], data = _cfg6_data, visibility = ["//visibility:private"])
 filegroup(name = "core", srcs = ["_/dvcfgcore/dvcfgcore.exe"], data = _cfg6_data, visibility = ["//visibility:private"])
-cfg6_toolchain(name = "cfg6", cli = ":cli", xpro = ":xpro", core = ":core", settings_patcher = ":settings_patcher")
+cfg6_toolchain(name = "cfg6", cli = ":cli", xpro = ":xpro", core = ":core", settings_patcher = ":settings_patcher", differ = ":differ")
 toolchain(name ="toolchain", toolchain = ":cfg6", toolchain_type = "@rules_cfg6//:toolchain_type")
 
 java_import(
@@ -62,3 +63,4 @@ java_library(name = "pai_beta", exports = _pai_common_lib_names + _pai_beta_lib_
 java_library(name = "pai_neverlink", exports = [":pai"], neverlink = True, visibility = ["//visibility:private"])
 java_import(name = "gson", jars = glob(["_/lib/gson-*.jar"]), visibility = ["//visibility:private"])
 java_binary(name = "settings_patcher", deps = [":gson"], srcs = ["@rules_cfg6//:SettingsPatcher.java"], main_class = "SettingsPatcher")
+script_jar(name = "differ", deps = [":pai_neverlink"], srcs = ["@rules_cfg6//:Differ.java"], script_classes = ["Differ"])
