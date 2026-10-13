@@ -23,7 +23,7 @@ def encode_eac_arg(arg):
         )
         ```
     """
-    return "//" + json.encode(json.encode(arg)).replace("{", "{{").replace("}", "}}").replace("{{{{", "{").replace("}}}}", "}")
+    return "//" + json.encode(json.encode(arg).replace("{", "{{").replace("}", "}}"))
 
 def default_http_archive_attrs(archive_name, *mutex_attrs):
     return {
@@ -605,7 +605,8 @@ expand_file_paths = rule(
 )
 
 def _to_paths(ctx, target, build):
-    paths = [p for t in target for p in ctx.expand_location("$({} {})".format("locations" if build else "rlocationpaths", t.label), [t]).split(" ")] if type(target) == _LIST_TYPE else ctx.expand_location("$({} {})".format("locations" if build else "rlocationpaths", target.label), [target]).split(" ")
+    location_func = "locations" if build else "rlocationpaths"
+    paths = [p for t in target for p in ctx.expand_location("$({} {})".format(location_func, t.label), [t]).split(" ")] if type(target) == _LIST_TYPE else ctx.expand_location("$({} {})".format(location_func, target.label), [target]).split(" ")
     result = []
     tmp = ""
     for s in paths:
@@ -773,18 +774,30 @@ Separate multiple commands to run sequentially with `\\n` (newline).""", mandato
 - Pipe and separator are optional defaulting to a single space separator, i.e.: `inputs = { "files": "<label>" }` and `command = 'import {files}'` yield a resulting command line like this: `import "<file1>" "{file2}" ...`.""", allow_files = True)
 }
 
-def _is_update(s):
+def _is_cmd(s, *cmds):
     s = s.lstrip("\"' \t")
-    if not s.startswith("project"):
+    if not s.startswith(cmds[0]):
         return False
-    s = s[7:]
-    remainder = s.lstrip(" \t")
-    return len(remainder) < len(s) and remainder.startswith("update")
+    s = s[len(cmds[0]):]
+    for c in cmds[1:]:
+        remainder = s.lstrip(" \t")
+        if len(remainder) == len(s) or not remainder.startswith(c):
+            return False
+        s = remainder[len(c):]
+    return True
+
+def _fixup_eac_arg(c, dict):
+    i = c.find("//")
+    if i != -1 and _is_cmd(c, "eac"):
+        arg = c[i + 2:]
+        for k in dict.keys():
+            arg = arg.replace("{{" + k + "}}", "{" + k + "}")
+        return c[:i + 2] + arg
+    return c
 
 def _apply_command_impl_internal(ctx, project, cmd, inputs, env):
     p = project[DvProjectProvider]
     out = ctx.actions.declare_file(ctx.label.name + "/dvproject.tar.gz")
-    hybrid = "cp -r '{}/.' '{{project_dir}}'\n".format(p.hybrid) if (hasattr(p, "hybrid") and [c for c in cmd.split("{dvcfg}") if _is_update(c)]) else ""
     dict = _check_keys(
         {
             "_upstream_": project,
@@ -796,7 +809,9 @@ def _apply_command_impl_internal(ctx, project, cmd, inputs, env):
         },
         inputs
     )
-    script = _script(ctx, ctx.label.name + "/script.sh", _PREPARE_FOLDER + hybrid + _UNTAR + cmd + _STOP + _TAR, True, dict)
+    dvcfg_commands = [_fixup_eac_arg(c, dict) for c in cmd.split("{dvcfg}")]
+    hybrid = "cp -r '{}/.' '{{project_dir}}'\n".format(p.hybrid) if (hasattr(p, "hybrid") and [c for c in dvcfg_commands if _is_cmd(c, "project", "update")]) else ""
+    script = _script(ctx, ctx.label.name + "/script.sh", _PREPARE_FOLDER + hybrid + _UNTAR + "{dvcfg}".join(dvcfg_commands) + _STOP + _TAR, True, dict)
     ctx.actions.run_shell(outputs = [out], inputs = _input_files(dict), tools = _files(ctx.toolchains[":toolchain_type"].cfg6.cli) + [script], command = "./" + script.path, env = env, use_default_shell_env = True)
     return [DefaultInfo(files = depset([out])), p]
 
@@ -822,6 +837,15 @@ apply_command = rule(
     toolchains = [":toolchain_type"]
 )
 
+_EAC_DEV_PREFIX = 'if [[ "${{EAC_SPAWN-}}" == \'true\' ]]; then\n' + _PREPARE_FOLDER + _UNTAR + 'fi\n'
+
+def _fixup_eac_dev_arg(c, dict):
+    i = c.find("//") + 2
+    arg = c[i:]
+    for k in dict.keys():
+        arg = arg.replace("{{" + k + "}}", "{" + k + "}")
+    return c[:i] + arg
+
 def _run_command_script_impl(ctx):
     cli = ctx.toolchains[":toolchain_type"].cfg6.cli
     cmd = ctx.attr.command
@@ -841,6 +865,7 @@ def _run_command_script_impl(ctx):
             cmd = 'cp -r "{project_dir}/." "{hybrid_dir}"\n' + cmd.replace("{project_dir}", "{hybrid_dir}")
         dict = dict | { "-b": p.bsw_pkg, "-p": "-p '{}'".format(dvjson) }
     dict = _check_keys(dict, ctx.attr.inputs)
+    cmd = _fixup_eac_dev_arg(cmd, dict) if ctx.attr.prefix == _EAC_DEV_PREFIX else "{dvcfg}".join([_fixup_eac_arg(c, dict) for c in cmd.split("{dvcfg}")])
     script = _script(ctx, ctx.label.name + "/script.sh", ctx.attr.prefix + cmd, False, dict)
     return [DefaultInfo(executable = script, runfiles = ctx.runfiles(files = _input_files(dict)).merge(cli[DefaultInfo].default_runfiles))]
 
@@ -1079,9 +1104,9 @@ diff = macro(
     implementation = _diff_impl,
 )
 
-def _eac_dev_impl(jar, arg, tags, **kwargs):
+def _eac_dev_impl(jar, arg, inputs, tags, **kwargs):
     _run_command_impl(**(kwargs | {
-        "prefix": 'if [[ "${{EAC_SPAWN-}}" == \'true\' ]]; then\n' + _PREPARE_FOLDER + _UNTAR + 'fi\n',
+        "prefix": _EAC_DEV_PREFIX,
         "command": '''export DVCFG_JVM_ARGS='-agentlib:jdwp=transport=dt_socket,server=y,suspend=n -Djdk.attach.allowAttachSelf=true'
 export DVCFG_TIMEOUT=300
 export DVCFG_BUILD_SYSTEM_PATH="$BUILD_WORKSPACE_DIRECTORY/''' + native.package_name() + '''"
@@ -1099,7 +1124,7 @@ if [[ "${{EAC_SPAWN-}}" != 'true' ]]; then
     _copy "{project_dir}/Output/Log/EaC" "$BUILD_WORKSPACE_DIRECTORY/.eac-run-artifacts/$(date '+%Y-%m-%d_%H-%M-%S')"
     rm -rf "{project_dir}/Output/Log/EaC"
 fi''',
-        "inputs": { "-c": jar },
+        "inputs": inputs | { "-c": jar },
         "tags": tags + ["EAC_SPAWN"]
     }))
 
@@ -1109,9 +1134,9 @@ eac_dev = macro(
     attrs = {
         "jar": attr.label(doc = "EaC .jar file to run/debug.", mandatory = True, configurable = False),
         "arg": attr.string(doc = "Optional command line argument to call the code with (use [encode_eac_arg](#encode_eac_arg)).", configurable = False),
+        "inputs": attr.string_keyed_label_dict(doc = "Additional inputs used in the arg.", configurable = False),
         "tags": attr.string_list(configurable = False),
         "command": None,
-        "inputs": None
     },
     implementation = _eac_dev_impl
 )
