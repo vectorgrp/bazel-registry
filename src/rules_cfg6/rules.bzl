@@ -866,7 +866,7 @@ def _run_command_script_impl(ctx):
         dict = dict | { "-b": p.bsw_pkg, "-p": "-p '{}'".format(dvjson) }
     dict = _check_keys(dict, ctx.attr.inputs)
     cmd = _fixup_eac_dev_arg(cmd, dict) if ctx.attr.prefix == _EAC_DEV_PREFIX else "{dvcfg}".join([_fixup_eac_arg(c, dict) for c in cmd.split("{dvcfg}")])
-    script = _script(ctx, ctx.label.name + "/script.sh", ctx.attr.prefix + cmd, False, dict)
+    script = _script(ctx, ctx.label.name + "/script.sh", ctx.attr.prefix + 'export DVCFG_BUILD_SYSTEM_PATH="$BUILD_WORKSPACE_DIRECTORY/{}"\n'.format(ctx.attr.label.package) + cmd, False, dict)
     return [DefaultInfo(executable = script, runfiles = ctx.runfiles(files = _input_files(dict)).merge(cli[DefaultInfo].default_runfiles))]
 
 run_command_script = rule(
