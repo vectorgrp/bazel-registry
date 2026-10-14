@@ -383,7 +383,7 @@ def _arxml_patch_impl(name, srcs, call, visibility, **kwargs):
     )
 
 arxml_patch = macro(
-    doc = "Internal macro for creating a task to be used in rule `script_patched_arxml`.",
+    doc = "Macro for creating a task to be used in rule `script_patched_arxml`.",
     inherit_attrs = script_jar,
     attrs = {
         "script_classes": None,

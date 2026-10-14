@@ -59,8 +59,11 @@ _pai_beta_lib_names = [jar[len(_lib_folder):-4] for jar in _pai_jars if jar.ends
     for name in _pai_beta_lib_names
 ]
 java_library(name = "pai", exports = _pai_common_lib_names + _pai_stable_lib_names)
+java_library(name = "pai_neverlink", exports = [":pai"], neverlink = True)
+java_library(name = "pai_testonly", exports = [":pai"], testonly = True)
 java_library(name = "pai_beta", exports = _pai_common_lib_names + _pai_beta_lib_names)
-java_library(name = "pai_neverlink", exports = [":pai"], neverlink = True, visibility = ["//visibility:private"])
+java_library(name = "pai_beta_neverlink", exports = [":pai_beta"], neverlink = True)
+java_library(name = "pai_beta_testonly", exports = [":pai_beta"], testonly = True)
 java_import(name = "gson", jars = glob(["_/lib/gson-*.jar"]), visibility = ["//visibility:private"])
 java_binary(name = "settings_patcher", deps = [":gson"], srcs = ["@rules_cfg6//:SettingsPatcher.java"], main_class = "SettingsPatcher")
 script_jar(name = "differ", deps = [":pai_neverlink"], srcs = ["@rules_cfg6//:Differ.java"], script_classes = ["Differ"])
