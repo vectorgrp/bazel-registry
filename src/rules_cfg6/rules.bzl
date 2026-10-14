@@ -585,6 +585,28 @@ app_design = macro(
     implementation = _app_design_impl
 )
 
+def _derive_ecuc_impl(ctx):
+    out = ctx.actions.declare_file(ctx.label.name + ".arxml")
+    dvcfg = ctx.toolchains[":toolchain_type"].cfg6.cli
+    dict = { "dvcfg": dvcfg, "-b": ctx.attr.bsw_pkg, "out": out.path, "srcs": ctx.attr.srcs }
+    cmd = "{dvcfg} derive-ecuc run {-b} "
+    if ctx.attr.settings:
+        cmd += "{-c} "
+        dict = dict | { "-c": ctx.attr.settings }
+    script = _script(ctx, ctx.label.name + ".sh", cmd + "-o '{out}' {srcs}", True, dict)
+    ctx.actions.run_shell(outputs = [out], inputs = _input_files(dict), tools = _files(dvcfg) + [script], command = "./" + script.path, env = _exclusive_label(ctx), use_default_shell_env = True)
+    return [DefaultInfo(files = depset([out]))]
+
+derive_ecuc = rule(
+    doc = "Derive an ECU configuration from the given input files.",
+    attrs = _BSW_PKG_ATTR | {
+        "settings": attr.label(doc = "Optional configuration file.", allow_single_file = [".json"]),
+        "srcs": attr.label_list(doc = "Input files (ECU extract and - for post-build selectable only - EvaluatedVariantSet).", allow_files = [".arxml"], allow_empty = False)
+    },
+    implementation = _derive_ecuc_impl,
+    toolchains = [":toolchain_type"]
+)
+
 def _expand_file_paths_impl(ctx):
     t = ctx.file.template
     out = ctx.actions.declare_file(ctx.label.name + (t.extension if t.extension and len(t.extension) < len(t.basename) - 1 else ""))
