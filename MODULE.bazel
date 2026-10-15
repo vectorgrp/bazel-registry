@@ -10,6 +10,9 @@ bazel_dep(name = "bazel_skylib", version = "1.9.0", dev_dependency = True)
 bazel_dep(name = "rules_shell", version = "0.7.1", dev_dependency = True)
 # https://registry.bazel.build/modules/rules_pkg
 bazel_dep(name = "rules_pkg", version = "1.2.0", dev_dependency = True)
+# https://registry.bazel.build/modules/rules_go
+# transitive dep of rules_kotlin (via rules_android); older versions are incompatible with Bazel 9
+bazel_dep(name = "rules_go", version = "0.59.0", dev_dependency = True)
 
 # patching rules shell for stardoc
 single_version_override(
