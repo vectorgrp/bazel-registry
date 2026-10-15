@@ -1,4 +1,5 @@
 module(name = "rules_cfg6")
 
 bazel_dep(name = "rules_java", version = "9.6.1")
+bazel_dep(name = "rules_kotlin", version = "2.2.2")
 bazel_dep(name = "rules_shell", version = "0.7.1")
