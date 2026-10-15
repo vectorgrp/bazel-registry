@@ -3,15 +3,17 @@ load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
 load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
 load("//build:rules.bzl", "module_build_props", "build_module")
 
-name, version, readme_title_substitutions = module_build_props("3.8.3")
+name, version, readme_title_substitutions = module_build_props("3.9.0")
 
 bzl_library(
     name = "lib",
-    srcs = ["@rules_cfg6//:defs.bzl", "@rules_cfg6//:rules.bzl", "//src/rules_cfg6:defs.bzl", "//src/rules_cfg6:rules.bzl"],
+    srcs = ["@rules_cfg6//:defs.bzl", "@rules_cfg6//:rules.bzl", "@rules_cfg6//:kt_jar_library.bzl", "//src/rules_cfg6:defs.bzl", "//src/rules_cfg6:rules.bzl", "//src/rules_cfg6:kt_jar_library.bzl"],
     deps = [
         "@rules_java//java:rules",
         "@rules_java//java:java_single_jar",
         "@rules_java//java/private:proto_support",
+        "@rules_kotlin//kotlin/internal",
+        "@rules_kotlin//src/main/starlark/core/plugin:providers.bzl",
         "@rules_shell//shell:rules_bzl",
         "@rules_shell//shell/private:providers.bzl"
     ],

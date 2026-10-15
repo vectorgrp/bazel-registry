@@ -2,6 +2,7 @@
 Bazel ruleset for working with [DaVinci Configurator Classic Version 6](https://help.vector.com/davinci-configurator-classic/en/latest/user-manual/index.html).
 """
 
+load(":kt_jar_library.bzl", _kt_jar_library = "kt_jar_library")
 load(":rules.bzl",
     _cfg6_archive = "cfg6_archive",
     _local_cfg6 = "local_cfg6",
@@ -63,3 +64,5 @@ list_project_files = _list_project_files
 encode_eac_arg = _encode_eac_arg
 diff = _diff
 derive_ecuc = _derive_ecuc
+kt_jar_library = _kt_jar_library
+
