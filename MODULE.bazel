@@ -2,6 +2,8 @@
 bazel_dep(name = "stardoc", version = "0.8.1", dev_dependency = True)
 # https://registry.bazel.build/modules/rules_java
 bazel_dep(name = "rules_java", version = "9.6.1", dev_dependency = True)
+# https://registry.bazel.build/modules/rules_kotlin
+bazel_dep(name = "rules_kotlin", version = "2.2.2", dev_dependency = True)
 # https://registry.bazel.build/modules/bazel_skylib
 bazel_dep(name = "bazel_skylib", version = "1.9.0", dev_dependency = True)
 # https://registry.bazel.build/modules/rules_shell
@@ -13,6 +15,13 @@ bazel_dep(name = "rules_pkg", version = "1.2.0", dev_dependency = True)
 single_version_override(
     module_name = "rules_shell",
     patches = ["//build:rules_shell.patch"],
+    patch_strip = 1,
+)
+
+# patching rules kotlin for stardoc
+single_version_override(
+    module_name = "rules_kotlin",
+    patches = ["//build:rules_kotlin.patch"],
     patch_strip = 1,
 )
 

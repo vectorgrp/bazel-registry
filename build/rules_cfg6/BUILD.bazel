@@ -7,11 +7,13 @@ name, version, readme_title_substitutions = module_build_props("3.8.3")
 
 bzl_library(
     name = "lib",
-    srcs = ["@rules_cfg6//:defs.bzl", "@rules_cfg6//:rules.bzl", "//src/rules_cfg6:defs.bzl", "//src/rules_cfg6:rules.bzl"],
+    srcs = ["@rules_cfg6//:defs.bzl", "@rules_cfg6//:rules.bzl", "@rules_cfg6//:kt_jar_library.bzl", "//src/rules_cfg6:defs.bzl", "//src/rules_cfg6:rules.bzl", "//src/rules_cfg6:kt_jar_library.bzl"],
     deps = [
         "@rules_java//java:rules",
         "@rules_java//java:java_single_jar",
         "@rules_java//java/private:proto_support",
+        "@rules_kotlin//kotlin/internal",
+        "@rules_kotlin//src/main/starlark/core/plugin:providers.bzl",
         "@rules_shell//shell:rules_bzl",
         "@rules_shell//shell/private:providers.bzl"
     ],
