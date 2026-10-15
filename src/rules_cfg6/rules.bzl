@@ -665,7 +665,7 @@ def _input_files(dict):
 
 _PREPARE_FOLDER = "rm -rf '{_parent_dir_}'\nmkdir -p '{project_dir}'\n"
 _UNTAR = "tar --force-local -zxf {_upstream_} -C '{project_dir}'\n"
-_COMMON_TAR_OPTS = "--force-local --exclude '*.~lock' --exclude 'dvcfg.local.properties'"
+_COMMON_TAR_OPTS = "--force-local --exclude '*.~lock' --exclude 'dvcfg.local.properties' --exclude 'BUILD' --exclude 'BUILD.bazel'"
 _TAR = "\ntar " + _COMMON_TAR_OPTS + " -zcf '{_parent_dir_}/dvproject.tar.gz' -C '{project_dir}' .\nrm -rf '{project_dir}'"
 _STOP = '\n{dvcfg} stop {-p} --force'
 
@@ -738,43 +738,44 @@ def _hybrid_impl(ctx):
     if [f for f in ctx.files.srcs if not f.path.startswith(prefix)]:
         fail("All srcs must be contained below the folder containing the .dvjson file.")
     out = ctx.actions.declare_file(ctx.label.name + "/dvproject.tar.gz")
-    exclude = (" --exclude '" + "' --exclude '".join(ctx.attr.exclude) + "'") if ctx.attr.exclude else ""
-    copy = "tar " + _COMMON_TAR_OPTS + exclude + " -cf - -C '{source}' . | tar --force-local -xf - -C '{project_dir}'"
-    script = _script(ctx, ctx.label.name + "/script.sh", _PREPARE_FOLDER + copy + _TAR, True, { "_parent_dir_": out.dirname, "project_dir": out.dirname + "/_", "source": dvjson_file.dirname })
+    exclude = (" --exclude '" + "' --exclude '".join(ctx.attr.derived) + "'") if ctx.attr.derived else ""
+    p = DvProjectProvider(
+        dvjson = dvjson_file.basename,
+        bsw_pkg = ctx.attr.bsw_pkg,
+        hybrid = dvjson_file.dirname,
+        copy_hybrid = "tar " + _COMMON_TAR_OPTS + exclude + " -cf - -C '" + dvjson_file.dirname + "' . | tar --force-local -xf - -C '{project_dir}'"
+    )
+    script = _script(ctx, ctx.label.name + "/script.sh", _PREPARE_FOLDER + p.copy_hybrid + _TAR, True, { "_parent_dir_": out.dirname, "project_dir": out.dirname + "/_" })
     ctx.actions.run_shell(outputs = [out], inputs = ctx.files.srcs, tools = [script], command = "./" + script.path, use_default_shell_env = True)
-    return [DefaultInfo(files = depset([out])), DvProjectProvider(dvjson = dvjson_file.basename, bsw_pkg = ctx.attr.bsw_pkg, hybrid = dvjson_file.dirname)]
+    return [DefaultInfo(files = depset([out])), p]
 
 hybrid = rule(
     doc = "Use an existing DaVinci Configurator Classic Version 6 project.",
     attrs = _BSW_PKG_ATTR | {
-        "srcs": attr.label_list(doc = """The files of an existing project.
+        "srcs": attr.label_list(doc = """The files of a checked-in project that invalidate this target when they change:
 
 - The .dvjson file (always required).
 - All settings .json files (referenced by the .dvjson file).
 
 All of these files must be contained below the parent folder of the .dvjson file.
-Modifications to any of these files invalidate the target.
 
 Usually a `hybrid` target is extended using [apply_command](#apply_command).
-If the project folder contains files, that are modified through different tools,
-these files should be listed as inputs of the `apply_command` target that needs to re-run after the modification.
+All checked-in project files must be listed as inputs of the `apply_command` target that needs to re-run when they change.
 
-Typically, this is the `project update` command. I.e., if your workflow requires modifying user ECUC files
-(in `./Config/EcuConfig`) through some other tool capture all relevant files in some label and list them as an input to the command:
+Typically, this is the `project update` command that needs to be re-executed when any files in the `./Config` folder have been modified:
 
 ```starlark
-filegroup(name = "user_ecuc", srcs = glob(["Config/EcuConfig/**"]), visibility = ["//visibility:public"])
-
 apply_command(
     name = "project",
     project = ":upstream",
     command = '{dvcfg} project update {-p} {-b}',
-    inputs = { "user_ecuc": ":user_ecuc" }
+    # changes in any file inside the ./Config folder invalidate this target
+    inputs = { "user_ecuc": glob(["Config/**"]) }
 )
 ```
 
-Even if the files are not used in the command they will invalidate the target when getting modified.""", allow_files = True),
-        "exclude": attr.string_list(doc = "Optional GNU tar exclude patterns listing all project files/folders that should be excluded from the target (no trailing slashes for folders).", default = ["./Output"])
+Modifications to the files invalidate the target even if they are not used in the actual CLI call.""", allow_files = True),
+        "derived": attr.string_list(doc = "Optional GNU tar exclude patterns listing all derived project files/folders.", default = ["./Output"])
     },
     implementation = _hybrid_impl
 )
@@ -832,8 +833,8 @@ def _apply_command_impl_internal(ctx, project, cmd, inputs, env):
         inputs
     )
     dvcfg_commands = [_fixup_eac_arg(c, dict) for c in cmd.split("{dvcfg}")]
-    hybrid = "cp -r '{}/.' '{{project_dir}}'\n".format(p.hybrid) if (hasattr(p, "hybrid") and [c for c in dvcfg_commands if _is_cmd(c, "project", "update")]) else ""
-    script = _script(ctx, ctx.label.name + "/script.sh", _PREPARE_FOLDER + hybrid + _UNTAR + "{dvcfg}".join(dvcfg_commands) + _STOP + _TAR, True, dict)
+    hybrid = p.copy_hybrid if (hasattr(p, "hybrid") and [c for c in dvcfg_commands if _is_cmd(c, "project", "update")]) else ""
+    script = _script(ctx, ctx.label.name + "/script.sh", _PREPARE_FOLDER + _UNTAR + hybrid + "\n" + "{dvcfg}".join(dvcfg_commands) + _STOP + _TAR, True, dict)
     ctx.actions.run_shell(outputs = [out], inputs = _input_files(dict), tools = _files(ctx.toolchains[":toolchain_type"].cfg6.cli) + [script], command = "./" + script.path, env = env, use_default_shell_env = True)
     return [DefaultInfo(files = depset([out])), p]
 
@@ -1072,7 +1073,7 @@ copy_files = macro(
 )
 
 def _open_impl(evo1, **kwargs):
-    run_command(command = ("'" + evo1 + "'" if evo1 else "{dvcfg} project start") + " {-b} {-p}\necho 'Project has been opened in DaVinci Configurator Classic Version 6.'\nread -n 1 -s -r -p 'Press any key to continue...'\necho", **kwargs)
+    run_command(command = ("'" + evo1 + "'" if evo1 else "{dvcfg} project start") + " {-b} {-p}\necho 'Project has been opened in DaVinci Configurator Classic Version 6.'\necho 'Terminate this run to shut down DaVinci Configurator Classic Version 6.'\nread -n 1 -s -r -p 'Press any key to terminate...'\necho", **kwargs)
 
 open = macro(
     doc = "Open a project in DaVinci Configurator Classic Version 6.",
