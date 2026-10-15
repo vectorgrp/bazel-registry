@@ -885,7 +885,7 @@ def _run_command_script_impl(ctx):
             dvjson = hybrid_dir + "/" + p.dvjson
             dict = dict | { "hybrid_dir": hybrid_dir }
             cmd = 'cp -r "{project_dir}/." "{hybrid_dir}"\n' + cmd.replace("{project_dir}", "{hybrid_dir}")
-        dict = dict | { "-b": p.bsw_pkg, "-p": "-p '{}'".format(dvjson) }
+        dict = dict | { "-b": p.bsw_pkg, "-p": '-p "{}"'.format(dvjson) }
     dict = _check_keys(dict, ctx.attr.inputs)
     cmd = _fixup_eac_dev_arg(cmd, dict) if ctx.attr.prefix == _EAC_DEV_PREFIX else "{dvcfg}".join([_fixup_eac_arg(c, dict) for c in cmd.split("{dvcfg}")])
     script = _script(ctx, ctx.label.name + "/script.sh", ctx.attr.prefix + 'export DVCFG_BUILD_SYSTEM_PATH="$BUILD_WORKSPACE_DIRECTORY/{}"\n'.format(ctx.label.package) + cmd, False, dict)
