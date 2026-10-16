@@ -13,55 +13,13 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.google.gson.JsonPrimitive;
 
-/**
- * Patches DaVinci project settings files by deep-merging JSON content.
- *
- * <p>
- * The dvjson file maps setting keys to their respective JSON files, e.g.:
- *
- * <pre>{@code
- * {
- *   "general": "Settings/General.json",
- *   "ifp": "Settings/Ifp.json"
- * }
- * }</pre>
- *
- * <p>
- * The patch file contains override objects for those keys, e.g.:
- *
- * <pre>{@code
- * {
- *   "general": {"key": "value"},
- *   "ifp": {"other": true}
- * }
- * }</pre>
- *
- * <p>
- * For each key in the patch file:
- * <ul>
- * <li>If the key exists in the dvjson, the referenced settings file is deep-merged with the patch content.</li>
- * <li>If the key does not exist, it is registered in the dvjson and a new settings file is created.</li>
- * </ul>
- *
- * <p>
- * Deep merge rules:
- * <ul>
- * <li>Objects are merged recursively.</li>
- * <li>Arrays with a known identity key (see {@link #ARRAY_IDENTITY_KEYS}) are merged by matching elements on that key and replacing them.</li>
- * <li>Other arrays are merged as a duplicate-free union (deep equality check).</li>
- * <li>Primitives and null are replaced by the override value.</li>
- * <li>A {@code null} value in the patch removes the corresponding key from the base object.</li>
- * <li>For identity-key arrays, an element with {@code "__delete__": true} removes the matching base element.</li>
- * </ul>
- *
- * <p>
- * Usage: {@code java -cp <gson.jar> SettingsPatch.java <dvjson> <patch>}
- */
 public final class SettingsPatcher {
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
-    /** Marker property name used in array elements to signal deletion of a matched element. */
+    /**
+     * Marker property name used in array elements to signal deletion of a matched element.
+     */
     private static final String DELETE_MARKER = "__delete__";
 
     /**
@@ -80,11 +38,6 @@ public final class SettingsPatcher {
         // utility class
     }
 
-    /**
-     * Entry point. Parses command-line arguments and applies the patch.
-     *
-     * @param args {@code -d <dvjson_path> -p <patch_file_path>}
-     */
     public static void main(String[] args) throws IOException {
         if (args.length != 2 || !args[0].endsWith(".dvjson") || !args[1].endsWith(".json")) {
             System.err.println("Usage: java SettingsPatch.java <dvjson> <patch>");
