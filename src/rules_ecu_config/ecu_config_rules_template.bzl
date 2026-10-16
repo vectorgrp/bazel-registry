@@ -105,9 +105,9 @@ run_on_project = macro(
     implementation = _run_on_project_impl
 )
 
-def _generate_foundation_layer_impl(bsw_pkg = None, **kwargs):
+def _generate_foundation_layer_impl(bsw_pkg, **kwargs):
     _generate_foundation_layer(
-        bsw_pkg = bsw_pkg if bsw_pkg else "FOUNDATION_LAYER_PKG",
+        bsw_pkg = bsw_pkg if bsw_pkg else "BSW",
         **kwargs
     )
 
@@ -115,7 +115,7 @@ generate_foundation_layer = macro(
     doc = "Macro for generating the foundation layer API sources for `{}`.".format(_PROJECT_NAME),
     inherit_attrs = _generate_foundation_layer,
     attrs = {
-        "bsw_pkg": attr.label(doc = "The BSW package folder (defaults to the ECU's BSW package).", allow_single_file = True),
+        "bsw_pkg": attr.string(doc = "Absolute path of the basic software package folder (defaults to the package of the ECU).", configurable = False),
     },
     implementation = _generate_foundation_layer_impl
 )
