@@ -665,7 +665,7 @@ def _input_files(dict):
 
 _PREPARE_FOLDER = "rm -rf '{_parent_dir_}'\nmkdir -p '{project_dir}'\n"
 _UNTAR = "tar --force-local -zxf {_upstream_} -C '{project_dir}'\n"
-_COMMON_TAR_OPTS = "--force-local --exclude '*.~lock' --exclude 'dvcfg.local.properties' --exclude 'BUILD' --exclude 'BUILD.bazel'"
+_COMMON_TAR_OPTS = "--force-local --exclude '*.~lock' --exclude 'dvcfg.local.properties' --exclude 'BUILD' --exclude 'BUILD.bazel' --exclude '.gitignore'"
 _TAR = "\ntar " + _COMMON_TAR_OPTS + " -zcf '{_parent_dir_}/dvproject.tar.gz' -C '{project_dir}' .\nrm -rf '{project_dir}'"
 _STOP = '\n{dvcfg} stop {-p} --force'
 
