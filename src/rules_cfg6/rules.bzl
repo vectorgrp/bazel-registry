@@ -770,7 +770,8 @@ apply_command(
     project = ":upstream",
     command = '{dvcfg} project update {-p} {-b}',
     # changes in any file inside the ./Config folder invalidate this target
-    inputs = { "user_ecuc": glob(["Config/**"]) }
+    # instable ReferenceCorrectionData.arxml is excluded
+    inputs = { "user_ecuc": glob(include = ["Config/**"], exclude = ["Config/StructuredExtract/BswConfig/ReferenceCorrectionData.arxml"]) }
 )
 ```
 
