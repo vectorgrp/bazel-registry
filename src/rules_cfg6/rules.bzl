@@ -762,7 +762,7 @@ All of these files must be contained below the parent folder of the .dvjson file
 Usually a `hybrid` target is extended using [apply_command](#apply_command).
 All checked-in project files must be listed as inputs of the `apply_command` target that needs to re-run when they change.
 
-Typically, this is the `project update` command that needs to be re-executed when any files in the `./Config` folder have been modified:
+Typically, it is the `project update` command that needs to be re-executed when any files in the `./Config` folder have been modified:
 
 ```starlark
 apply_command(
