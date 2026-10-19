@@ -810,13 +810,16 @@ def _is_cmd(s, *cmds):
         s = remainder[len(c):]
     return True
 
-def _fixup_eac_arg(c, dict):
-    i = c.find("//")
-    if i != -1 and _is_cmd(c, "eac"):
-        arg = c[i + 2:]
-        for k in dict.keys():
-            arg = arg.replace("{{" + k + "}}", "{" + k + "}")
-        return c[:i + 2] + arg
+def _fixup_eac_arg(c, is_hybrid, dict):
+    if _is_cmd(c, "eac"):
+        if is_hybrid:
+            c = c.replace("eac", "eac --hybrid", 1)
+        i = c.find("//")
+        if i != -1:
+            arg = c[i + 2:]
+            for k in dict.keys():
+                arg = arg.replace("{{" + k + "}}", "{" + k + "}")
+            return c[:i + 2] + arg
     return c
 
 def _apply_command_impl_internal(ctx, project, cmd, inputs, env):
@@ -833,8 +836,9 @@ def _apply_command_impl_internal(ctx, project, cmd, inputs, env):
         },
         inputs
     )
-    dvcfg_commands = [_fixup_eac_arg(c, dict) for c in cmd.split("{dvcfg}")]
-    hybrid = p.copy_hybrid if (hasattr(p, "hybrid") and [c for c in dvcfg_commands if _is_cmd(c, "project", "update")]) else ""
+    is_hybrid = hasattr(p, "hybrid")
+    dvcfg_commands = [_fixup_eac_arg(c, is_hybrid, dict) for c in cmd.split("{dvcfg}")]
+    hybrid = p.copy_hybrid if (is_hybrid and [c for c in dvcfg_commands if _is_cmd(c, "project", "update")]) else ""
     script = _script(ctx, ctx.label.name + "/script.sh", _PREPARE_FOLDER + _UNTAR + hybrid + "\n" + "{dvcfg}".join(dvcfg_commands) + _STOP + _TAR, True, dict)
     ctx.actions.run_shell(outputs = [out], inputs = _input_files(dict), tools = _files(ctx.toolchains[":toolchain_type"].cfg6.cli) + [script], command = "./" + script.path, env = env, use_default_shell_env = True)
     return [DefaultInfo(files = depset([out])), p]
@@ -879,17 +883,19 @@ def _run_command_script_impl(ctx):
         "project_dir": ctx.label.name + "/_",
         "dvcfg": cli
     }
+    is_hybrid = False
     if ctx.attr.project:
         p = ctx.attr.project[DvProjectProvider]
         dvjson = ctx.label.name + "/_/" + p.dvjson
         if hasattr(p, "hybrid"):
+            is_hybrid = True
             hybrid_dir = "$BUILD_WORKSPACE_DIRECTORY/{}".format(p.hybrid)
             dvjson = hybrid_dir + "/" + p.dvjson
             dict = dict | { "hybrid_dir": hybrid_dir }
             cmd = 'cp -r "{project_dir}/." "{hybrid_dir}"\n' + cmd.replace("{project_dir}", "{hybrid_dir}")
         dict = dict | { "-b": p.bsw_pkg, "-p": '-p "{}"'.format(dvjson) }
     dict = _check_keys(dict, ctx.attr.inputs)
-    cmd = _fixup_eac_dev_arg(cmd, dict) if ctx.attr.prefix == _EAC_DEV_PREFIX else "{dvcfg}".join([_fixup_eac_arg(c, dict) for c in cmd.split("{dvcfg}")])
+    cmd = _fixup_eac_dev_arg(cmd, dict) if ctx.attr.prefix == _EAC_DEV_PREFIX else "{dvcfg}".join([_fixup_eac_arg(c, is_hybrid, dict) for c in cmd.split("{dvcfg}")])
     script = _script(ctx, ctx.label.name + "/script.sh", ctx.attr.prefix + 'export DVCFG_BUILD_SYSTEM_PATH="$BUILD_WORKSPACE_DIRECTORY/{}"\n'.format(ctx.label.package) + cmd, False, dict)
     return [DefaultInfo(executable = script, runfiles = ctx.runfiles(files = _input_files(dict)).merge(cli[DefaultInfo].default_runfiles))]
 
