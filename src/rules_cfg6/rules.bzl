@@ -36,8 +36,11 @@ def single_file_from_target(target):
 def get_bash(repository_ctx):
     return repository_ctx.getenv("BAZEL_SH", "bash")
 
+def _is_absolute(s):
+    return s.startswith("/") or s.startswith("\\") or (len(s) > 2 and s[1] == ":" and (s[2] == "/" or s[2] == "\\"))
+
 def absolute_path(repository_ctx, s):
-    return repository_ctx.path(s) if s.startswith("/") or s.startswith("\\") or (len(s) > 2 and s[1] == ":" and (s[2] == "/" or s[2] == "\\")) else repository_ctx.path(str(repository_ctx.workspace_root) + "/" + s)
+    return repository_ctx.path(s) if _is_absolute(s) else repository_ctx.path(str(repository_ctx.workspace_root) + "/" + s)
 
 Cfg6ToolProvider = provider()
 
@@ -194,10 +197,10 @@ def _write_script(ctx, command, targets_dict, **kwargs):
 
 def _generate_foundation_layer_script_impl(ctx):
     includelist, substitution = (' --includelist "{filter}"', { "filter": ctx.attr.filter }) if ctx.attr.filter else ("", {})
-    return _write_script(ctx, 'cd "$BUILD_WORKSPACE_DIRECTORY" && "{core}" -application com.vector.cfg.bswmdmgen.app.flApplication -b "{bsw_pkg}" --force -o "{output}"' + includelist,
+    return _write_script(ctx, '"{core}" -application com.vector.cfg.bswmdmgen.app.flApplication -b "{bsw_pkg}" --force -o "{output}"' + includelist,
         { "output": ctx.attr.output } | substitution,
         core = ctx.toolchains[":toolchain_type"].cfg6.core,
-        bsw_pkg = ctx.attr.bsw_pkg,
+        bsw_pkg = ctx.attr.bsw_pkg if _is_absolute(ctx.attr.bsw_pkg) else "$BUILD_WORKSPACE_DIRECTORY/" + ctx.attr.bsw_pkg,
     )
 
 generate_foundation_layer_script = rule(
