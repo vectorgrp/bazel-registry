@@ -115,7 +115,7 @@ generate_foundation_layer = macro(
     doc = "Macro for generating the foundation layer API sources for `{}`.".format(_PROJECT_NAME),
     inherit_attrs = _generate_foundation_layer,
     attrs = {
-        "bsw_pkg": attr.string(doc = "Absolute path of the basic software package folder (defaults to the package of the ECU).", configurable = False),
+        "bsw_pkg": attr.string(doc = "Path (absolute or relative to workspace root) of the basic software package folder (defaults to the package of the ECU).", configurable = False),
     },
     implementation = _generate_foundation_layer_impl
 )
