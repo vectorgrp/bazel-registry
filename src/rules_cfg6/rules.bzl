@@ -788,9 +788,7 @@ def _check_keys(built_in, user):
 
 _COMMAND_ATTRS = {
     "command": attr.string(doc = """Command to run on the project (see [run_shell](https://bazel.build/rules/lib/builtins/actions#run_shell)).
-Use `{dvcfg}` for the DaVinci Configurator Classic Version 6 executable, `{-p}` for the project and `{-b}` for the BSW package.
-E.g., the command to update the project looks like this: `{dvcfg} project update {-b} {-p}`.
-Separate multiple commands to run sequentially with `\\n` (newline).""", mandatory = True),
+Separate multiple CLI calls with newline or semicolon.""", mandatory = True),
     "inputs": attr.string_keyed_label_dict(doc = """Input files used in `command`. The following rules apply:
 
 - Dictionary keys starting with `-` (minus): `inputs = { "-f": "<label>" }` and `command = '... {-f} ...'` yield a resulting command line like this: `... -f "<file1>" -f "{file2}" ...` (i.e., all files are listed with the preceeding switch).
@@ -798,16 +796,26 @@ Separate multiple commands to run sequentially with `\\n` (newline).""", mandato
 - Pipe and separator are optional defaulting to a single space separator, i.e.: `inputs = { "files": "<label>" }` and `command = 'import {files}'` yield a resulting command line like this: `import "<file1>" "{file2}" ...`.""", allow_files = True)
 }
 
+def _next_token_and_rest(s):
+    rest = s.lstrip()
+    if s.find("\n", 0, len(s) - len(rest)) != -1:
+        return ("", s)
+    s = rest
+    if s.startswith('"') or s.startswith("'"):
+        segments = s[1:].split(s[0])
+        for i, seg in enumerate(segments):
+            if not seg.endswith("\\"):
+                return (s[0] + s[0].join(segments[:i + 1]) + s[0], s[0].join(segments[i + 1:]))
+    for i in range(len(s)):
+        if (s[i].isspace() or s[i] == ";") and (i == 0 or s[i - 1] != "\\"):
+            return (s[:i], s[i:])
+    return (s, "")
+
 def _is_cmd(s, *cmds):
-    s = s.lstrip("\"' \t")
-    if not s.startswith(cmds[0]):
-        return False
-    s = s[len(cmds[0]):]
-    for c in cmds[1:]:
-        remainder = s.lstrip(" \t")
-        if len(remainder) == len(s) or not remainder.startswith(c):
+    for c in cmds:
+        token, s = _next_token_and_rest(s)
+        if token != c:
             return False
-        s = remainder[len(c):]
     return True
 
 def _fixup_eac_arg(c, is_hybrid, dict):
@@ -822,29 +830,66 @@ def _fixup_eac_arg(c, is_hybrid, dict):
             return c[:i + 2] + arg
     return c
 
-def _apply_command_impl_internal(ctx, project, cmd, inputs, env):
-    p = project[DvProjectProvider]
+_DIFF = "{diff}"
+
+def _join_dvcfg_cmds(p, commands, dict):
+    result = ""
+    for cmd_index, cmd in enumerate(commands):
+        diff_cmds = cmd.split(_DIFF)
+        dvcfg_prefix = "" if cmd_index == 0 else "{dvcfg}"
+        if len(diff_cmds) == 1:
+            result = result + dvcfg_prefix + cmd
+            continue
+        diff_with_predecessor = False
+        dvcfg_cmd = diff_cmds[0]
+        for diff_cmd in diff_cmds[1:]:
+            jsonl, rest = _next_token_and_rest(diff_cmd)
+            if not jsonl:
+                fail("Expected a project folder relative path to the JSONL output file as first argument for the diff command.")
+            theirs, rest = _next_token_and_rest(rest)
+            if theirs:
+                if not (theirs.startswith("{") and theirs.endswith("}")):
+                    fail("Expected notation like {theirs} for the other project of the diff command.")
+                theirs = theirs[1:len(theirs) - 1]
+                if not dict.get(theirs):
+                    fail("Expected " + theirs + " (used as theirs for the diff command) to be present in the rule's inputs.")
+                dvcfg_cmd = dvcfg_cmd + "mkdir -p '{_parent_dir_}/___'\n"\
+                    + _UNTAR.replace("_upstream_", theirs).replace("{project_dir}", "{_parent_dir_}/___")\
+                    + "{dvcfg} automation run {-b} {-p} -l {rules_cfg6_differ} -t diff -a diff -a '\"-t=../___/" + dict.get(theirs)[DvProjectProvider].dvjson + jsonl + "\"'\nrm -rf '{_parent_dir_}/___'"\
+                    + rest
+            elif diff_with_predecessor:
+                fail("Supporting one diff per CLI call, only.")
+            else:
+                diff_with_predecessor = True
+                dvcfg_cmd = "mkdir -p '{_parent_dir_}/__'\n"\
+                    + "cp -r '{project_dir}/.' '{_parent_dir_}/__/' || true\n"\
+                    + dvcfg_prefix + dvcfg_cmd\
+                    + "{dvcfg} automation run {-b} {-p} -l {rules_cfg6_differ} -t diff -a diff -a '\"-t=../__/" + p.dvjson + jsonl + "\"'\nrm -rf '{_parent_dir_}/__'"\
+                    + rest
+        result = result + ("" if diff_with_predecessor else dvcfg_prefix) + dvcfg_cmd
+    return result;
+
+def _apply_command_impl(ctx):
+    p = ctx.attr.project[DvProjectProvider]
     out = ctx.actions.declare_file(ctx.label.name + "/dvproject.tar.gz")
     dict = _check_keys(
         {
-            "_upstream_": project,
+            "_upstream_": ctx.attr.project,
             "_parent_dir_": out.dirname,
             "project_dir": out.dirname + "/_",
             "dvcfg": ctx.toolchains[":toolchain_type"].cfg6.cli,
             "-b": p.bsw_pkg,
             "-p": "-p '" + out.dirname + "/_/" + p.dvjson + "'",
+            "rules_cfg6_differ": ctx.toolchains[":toolchain_type"].cfg6.differ
         },
-        inputs
+        ctx.attr.inputs
     )
     is_hybrid = hasattr(p, "hybrid")
-    dvcfg_commands = [_fixup_eac_arg(c, is_hybrid, dict) for c in cmd.split("{dvcfg}")]
-    hybrid = p.copy_hybrid if (is_hybrid and [c for c in dvcfg_commands if _is_cmd(c, "project", "update")]) else ""
-    script = _script(ctx, ctx.label.name + "/script.sh", _PREPARE_FOLDER + _UNTAR + hybrid + "\n" + "{dvcfg}".join(dvcfg_commands) + _STOP + _TAR, True, dict)
-    ctx.actions.run_shell(outputs = [out], inputs = _input_files(dict), tools = _files(ctx.toolchains[":toolchain_type"].cfg6.cli) + [script], command = "./" + script.path, env = env, use_default_shell_env = True)
+    dvcfg_commands = [_fixup_eac_arg(c, is_hybrid, dict) for c in ctx.attr.command.split("{dvcfg}")]
+    hybrid = (p.copy_hybrid + "\n") if (is_hybrid and [c for c in dvcfg_commands if _is_cmd(c, "project", "update")]) else ""
+    script = _script(ctx, ctx.label.name + "/script.sh", _PREPARE_FOLDER + _UNTAR + hybrid + _join_dvcfg_cmds(p, dvcfg_commands, dict) + _STOP + _TAR, True, dict)
+    ctx.actions.run_shell(outputs = [out], inputs = _input_files(dict), tools = _files(ctx.toolchains[":toolchain_type"].cfg6.cli) + [script], command = "./" + script.path, env = ctx.attr.env, use_default_shell_env = True)
     return [DefaultInfo(files = depset([out])), p]
-
-def _apply_command_impl(ctx):
-    return _apply_command_impl_internal(ctx, ctx.attr.project, ctx.attr.command, ctx.attr.inputs, ctx.attr.env)
 
 apply_command = rule(
     doc = """Extend a project by running a command on it (see [here](https://help.vector.com/davinci-configurator-classic/en/latest/user-manual/references/cli/index.html) for available commnds). E.g.:
@@ -856,7 +901,36 @@ apply_command = rule(
 - `{dvcfg} automation run {-b} {-p} {-l} -t MyTask` runs a PAI task (see `inputs` on how to provide the script location `{-l}`).
 - `{dvcfg} export run {-b} {-p} -o "{project_dir}" -e everything` exports the entire AUTOSAR model. [project_file](#project_file) with `path = "Exported_everything.arxml"` yields the result.
 
-`{project_dir}` is expanded to the project folder (unquoted; useful for specifying output locations).""",
+`{dvcfg}` is expanded to the path of the DaVinci Configurator 6 CLI executable.
+Use `{-p}` for the project and `{-b}` for the BSW package.
+`{project_dir}` is expanded to the project folder (unquoted; useful for specifying output locations).
+
+The `{diff}` command can be used to compare the states of a project before and after a command has been applied. E.g., a command like
+
+```
+{dvcfg} eac {-b} {-p} ...
+{diff} eac.jsonl
+
+{dvcfg} project update {-b} {-p}
+{diff} update.jsonl
+```
+
+applies EaC and then updates the project. Additionally two JSONL files are created inside the project:
+
+- `eac.jsonl` contains the comparison of the project before and after EaC has been applied.
+- `update.jsonl` contains the comparison of the project after EaC has been applied and after the project has been updated.
+
+The `{diff}` command can also be used with a second argument:
+
+```
+{diff} diff.jsonl {theirs}
+```
+
+If used like this, `input` is expected to contain an entry like `{ "theirs": ":some_project" }` where `:some_project`
+is a target pointing to another DaVinci project.
+
+Use [project_file](#project_file) with the same path as has been procided to `{diff}` to extract the created JSONL reports.
+""",
     attrs = {
         "project": attr.label(doc = "The project to which to apply the command.", allow_single_file = True, providers = [DvProjectProvider], mandatory = True),
         "env": attr.string_dict(doc = "Optional environment variables.")
@@ -895,7 +969,7 @@ def _run_command_script_impl(ctx):
             cmd = 'cp -r "{project_dir}/." "{hybrid_dir}"\n' + cmd.replace("{project_dir}", "{hybrid_dir}")
         dict = dict | { "-b": p.bsw_pkg, "-p": '-p "{}"'.format(dvjson) }
     dict = _check_keys(dict, ctx.attr.inputs)
-    cmd = _fixup_eac_dev_arg(cmd, dict) if ctx.attr.prefix == _EAC_DEV_PREFIX else "{dvcfg}".join([_fixup_eac_arg(c, is_hybrid, dict) for c in cmd.split("{dvcfg}")])
+    cmd = _fixup_eac_dev_arg(cmd, dict) if ctx.attr.prefix == _EAC_DEV_PREFIX else _join_dvcfg_cmds(p, [_fixup_eac_arg(c, is_hybrid, dict) for c in cmd.split("{dvcfg}")], dict)
     script = _script(ctx, ctx.label.name + "/script.sh", ctx.attr.prefix + 'export DVCFG_BUILD_SYSTEM_PATH="$BUILD_WORKSPACE_DIRECTORY/{}"\n'.format(ctx.label.package) + cmd, False, dict)
     return [DefaultInfo(executable = script, runfiles = ctx.runfiles(files = _input_files(dict)).merge(cli[DefaultInfo].default_runfiles))]
 
@@ -925,14 +999,9 @@ def _run_command_impl(name, project, command, inputs, **kwargs):
     )
 
 run_command = macro(
-    doc = """Run a command on a project (see [here](https://help.vector.com/davinci-configurator-classic/en/latest/user-manual/references/cli/index.html) for available commnds). When running on an hybrid project, the resulting project is written back to the workspace. E.g.:
-
-- `{dvcfg} project validate {-b} {-p} --fail-on NONE` creates a validation report.
-- `{dvcfg} project generate {-b} {-p}` generates BSW code.
-- `{dvcfg} project generate-swct {-b} {-p}` generates SWC templates.
-- `{dvcfg} automation run {-b} {-p} {-l} -t MyTask` runs a PAI task (see `inputs` on how to provide the script location `{-l}`).
-- `{dvcfg} export run {-b} {-p} -o "$BUILD_WORKSPACE_DIRECTORY/export" -e everything` exports the entire AUTOSAR model.
-
+    doc = """Run a command on a project (see [here](https://help.vector.com/davinci-configurator-classic/en/latest/user-manual/references/cli/index.html) for available commnds).
+See [apply_command](#apply_command) for some examples.
+When running on an hybrid project, the resulting project is written back to the workspace.
 Use `$BUILD_WORKSPACE_DIRECTORY` to specify locations relative to the workspace.""",
     inherit_attrs = run_command_script,
     attrs = {
@@ -1089,49 +1158,6 @@ open = macro(
         "evo1": attr.string(doc = "Optional absolute path to a DaVinci Configurator Classic Version 6 Evo1 GUI launcher.", configurable = False)
     },
     implementation = _open_impl
-)
-
-def _diff_projects_impl(ctx):
-    return _apply_command_impl_internal(
-        ctx,
-        ctx.attr.ours,
-        "mkdir -p '{_parent_dir_}/__'\n" + _UNTAR.replace("_upstream_", "_theirs_").replace("{project_dir}", "{_parent_dir_}/__") + "{dvcfg} automation run {-b} {-p} {-l} -t diff -a diff -a '\"-t=../__/{theirs}\"'\nrm -rf '{_parent_dir_}/__'",
-        {
-            "_theirs_": ctx.attr.theirs,
-            "theirs": ctx.attr.theirs[DvProjectProvider].dvjson,
-            "-l": ctx.toolchains[":toolchain_type"].cfg6.differ
-        },
-        {}
-    )
-
-diff_projects = rule(
-    attrs = {
-        "ours": attr.label(doc = "Our project.", mandatory = True, providers = [DvProjectProvider]),
-        "theirs": attr.label(doc = "Their project.", mandatory = True, providers = [DvProjectProvider]),
-    },
-    implementation = _diff_projects_impl,
-    toolchains = [":toolchain_type"]
-)
-
-def _diff_impl(name, ours, theirs, **kwargs):
-    diff_projects_name = name + "_diff_projects"
-    diff_projects(
-        name = diff_projects_name,
-        ours = ours,
-        theirs = theirs
-    )
-    project_file(
-        name = name,
-        project = diff_projects_name,
-        out = name + ".jsonl",
-        path = "Output/Log/Diff.jsonl",
-        **kwargs
-    )
-
-diff = macro(
-    doc = 'JSONL diff of two projects.',
-    inherit_attrs = diff_projects,
-    implementation = _diff_impl,
 )
 
 def _eac_dev_impl(jar, arg, inputs, tags, **kwargs):

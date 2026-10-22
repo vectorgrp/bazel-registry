@@ -31,7 +31,6 @@ load(":rules.bzl",
     _copy_files = "copy_files",
     _list_project_files = "list_project_files",
     _encode_eac_arg = "encode_eac_arg",
-    _diff = "diff",
     _derive_ecuc = "derive_ecuc"
 )
 
@@ -62,7 +61,6 @@ run_command = _run_command
 copy_files = _copy_files
 list_project_files = _list_project_files
 encode_eac_arg = _encode_eac_arg
-diff = _diff
 derive_ecuc = _derive_ecuc
 kt_jar_library = _kt_jar_library
 

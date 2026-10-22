@@ -51,14 +51,16 @@ public class Differ implements IScriptFactory, IScriptTaskCode<IProjectScriptExe
     @Override
     public Object execute(IProjectScriptExecutionContext ctx, List<Object> arguments) {
         final var projectFolder = ctx.getPaths().getProjectFolder();
+        final var arg = theirsDvjson.getValue();
+        final var i = arg.indexOf(".dvjson") + 7;
         return ctx.getInstance(IProjectHandlingApi.class)
                 .parameterizeProjectLoad(open -> {
-                    open.projectFile(projectFolder.resolve(theirsDvjson.getValue()));
+                    open.projectFile(projectFolder.resolve(arg.substring(0, i)));
                     open.loadGenerators(false);
                     open.enableValidation(false);
                 }).openProject(theirs -> {
                     final var theirModules = getModules(theirs.getInstance(IEcucModelAccess.class)).stream().collect(byName());
-                    try (var out = Files.newBufferedWriter(projectFolder.resolve("Output/Log/Diff.jsonl"))) {
+                    try (var out = Files.newBufferedWriter(projectFolder.resolve(arg.substring(i)))) {
                         for (var ourModule : getModules(ctx.getInstance(IEcucModelAccess.class))) {
                             compare(ourModule, getTheirElement(ourModule, theirModules, MIModuleConfiguration::getDefinitionRef), out);
                         }
