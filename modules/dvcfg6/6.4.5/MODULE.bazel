@@ -1,0 +1,27 @@
+module(name = "dvcfg6", version = "6.4.5")
+
+bazel_dep(name = "rules_cfg6", version = "3.9.1")
+bazel_dep(name = "rules_dvarjson", version = "1.1.0")
+bazel_dep(name = "rules_ecu_config", version = "4.1.1")
+bazel_dep(name = "rules_java", version = "9.6.1")
+bazel_dep(name = "rules_shell", version = "0.7.1")
+
+cfg6_archive = use_repo_rule("@rules_cfg6//:defs.bzl", "cfg6_archive")
+cfg6_archive(
+    name = "cfg6",
+    nupkg_sha256 = "d07e12d7dd5b96e5b4ffeab3ed58f798f4196de1856f9783cd0c74a0f461d2a3",
+    nupkg_url = "https://packages.vehub.vector.com/nuget/flatcontainer/vector-davinci-configurator-classic-evo2-cli/6.4.5/vector-davinci-configurator-classic-evo2-cli.6.4.5.nupkg",
+    sha256 = "3177704a0e57ef8b6823f8a75a0bbc3210aca2754585febebb31df81f2e6c7c3",
+    url = "https://packages.vehub.vector.com/apt/pool/generic/vector-davinci-configurator-classic/6.4.5/vector-davinci-configurator-classic-evo2-cli-6.4.5.deb",
+)
+
+register_toolchains("@cfg6//:toolchain")
+
+evo1_archive = use_repo_rule("//:evo1.bzl", "evo1_archive")
+evo1_archive(
+    name = "dvcfg6_bridge_gui",
+    nupkg_sha256 = "139d4e05a04c8c42ae8491480a16e6a091755647efbe12bf85527a9b22622b0e",
+    nupkg_url = "https://packages.vehub.vector.com/nuget/flatcontainer/vector-davinci-configurator-classic/6.4.5/vector-davinci-configurator-classic.6.4.5.nupkg",
+    sha256 = "02eb37739be351f7ef922c90e0e735e786aba543b733b78d252ba8c2bddac725",
+    url = "https://packages.vehub.vector.com/apt/pool/generic/vector-davinci-configurator-classic/6.4.5/vector-davinci-configurator-classic-6.4.5.deb",
+)
