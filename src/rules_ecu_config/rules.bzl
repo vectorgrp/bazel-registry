@@ -291,6 +291,7 @@ def _ecu_config_repo_impl(repository_ctx):
             "CFG6_DEFS": str(repository_ctx.attr.cfg6_defs),
             "CFG6_EAC_AP": str(repository_ctx.attr.cfg6_defs.same_package_label("eac_annotation_processor")),
             "AS_CODE_JARS": str([str(label) for label in repository_ctx.attr.as_code]),
+            "FOUNDATION_LAYER_PKG": str(repository_ctx.attr.bsw_pkg),
             "BSW": bsw_pkg,
             "DVJSON": dvjson,
             "GUI_PROJECT": upstream

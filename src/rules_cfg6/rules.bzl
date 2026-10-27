@@ -36,11 +36,8 @@ def single_file_from_target(target):
 def get_bash(repository_ctx):
     return repository_ctx.getenv("BAZEL_SH", "bash")
 
-def _is_absolute(s):
-    return s.startswith("/") or s.startswith("\\") or (len(s) > 2 and s[1] == ":" and (s[2] == "/" or s[2] == "\\"))
-
 def absolute_path(repository_ctx, s):
-    return repository_ctx.path(s) if _is_absolute(s) else repository_ctx.path(str(repository_ctx.workspace_root) + "/" + s)
+    return repository_ctx.path(s) if s.startswith("/") or s.startswith("\\") or (len(s) > 2 and s[1] == ":" and (s[2] == "/" or s[2] == "\\")) else repository_ctx.path(str(repository_ctx.workspace_root) + "/" + s)
 
 Cfg6ToolProvider = provider()
 
@@ -198,14 +195,13 @@ def _write_script(ctx, command, targets_dict, **kwargs):
 def _generate_foundation_layer_script_impl(ctx):
     includelist, substitution = (' --includelist "{filter}"', { "filter": ctx.attr.filter }) if ctx.attr.filter else ("", {})
     return _write_script(ctx, '"{core}" -application com.vector.cfg.bswmdmgen.app.flApplication -b "{bsw_pkg}" --force -o "{output}"' + includelist,
-        { "output": ctx.attr.output } | substitution,
+        { "bsw_pkg": ctx.attr.bsw_pkg, "output": ctx.attr.output } | substitution,
         core = ctx.toolchains[":toolchain_type"].cfg6.core,
-        bsw_pkg = ctx.attr.bsw_pkg if _is_absolute(ctx.attr.bsw_pkg) else "$BUILD_WORKSPACE_DIRECTORY/" + ctx.attr.bsw_pkg,
     )
 
 generate_foundation_layer_script = rule(
     attrs = {
-        "bsw_pkg": attr.string(doc = "Path (absolute or relative to workspace root) of the BSW package folder.", mandatory = True),
+        "bsw_pkg": attr.label(doc = "The BSW package folder.", allow_single_file = True, mandatory = True),
         "output": attr.label(doc = "The destination folder for generated sources.", allow_single_file = True, mandatory = True),
         "filter": attr.label(doc = "Optional filter file containing the definition-references of all modules to be generated, separated by newlines. If this is not provided all modules of the BSW package are generated.", allow_single_file = True)
     },
