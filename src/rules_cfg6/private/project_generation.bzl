@@ -47,7 +47,7 @@ export APPDATA="$fakehome"
 export DVCFG_JVM_ARGS="-Duser.home=$fakehome $EXTRA_JVM_ARGS"
 export JAVA_OPTS="-Duser.home=$fakehome $EXTRA_JVM_ARGS"
 
-#trap "\\"$dvcfg_exe\\" stop -p \\"$tmp_project_dir\\" --force; rm -rf \\"$tmp_dir\\" || true" EXIT
+trap "\\"$dvcfg_exe\\" stop -p \\"$tmp_project_dir\\" --force; rm -rf \\"$tmp_dir\\" || true" EXIT
 "$dvcfg_exe" $command -p "$tmp_project_dir" -b "$tmp_bsw_pkg_dir" -o "$output_dir" --no-save $@
 
 # Redact generation date
