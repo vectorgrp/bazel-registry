@@ -20,8 +20,8 @@ tmp_dir=$(mktemp -d || mktemp -d -t bazel-tmp)
 # Copy project and on Linux sip to writable location in tmp_dir
 tmp_project_dir="$tmp_dir/project/deep/ly/nest/ed"
 mkdir -p "$tmp_project_dir"
-cp -LRTf "$project_dir/" "$tmp_project_dir"
-chmod -R +w "$tmp_project_dir"
+#cp -LRTf "$project_dir/" "$tmp_project_dir"
+#chmod -R +w "$tmp_project_dir"
 if [ `uname` == "Linux" ]; then
     tmp_bsw_pkg_dir="$tmp_dir/sip"
     cp -LRTf "$bsw_pkg_dir/" "$tmp_bsw_pkg_dir"
@@ -47,8 +47,13 @@ export APPDATA="$fakehome"
 export DVCFG_JVM_ARGS="-Duser.home=$fakehome $EXTRA_JVM_ARGS"
 export JAVA_OPTS="-Duser.home=$fakehome $EXTRA_JVM_ARGS"
 
-trap "\\"$dvcfg_exe\\" stop -p \\"$tmp_project_dir\\" --force; rm -rf \\"$tmp_dir\\" || true" EXIT
-"$dvcfg_exe" $command -p "$tmp_project_dir" -b "$tmp_bsw_pkg_dir" -o "$output_dir" --no-save $@
+# trap "\\"$dvcfg_exe\\" stop -p \\"$tmp_project_dir\\" --force; rm -rf \\"$tmp_dir\\" || true" EXIT
+
+timeout_cmd=()
+if [[ "$DVCFG_TIMEOUT" -gt 0 ]]; then
+    timeout_cmd=(timeout --kill-after=30 "$DVCFG_TIMEOUT")
+fi
+"${timeout_cmd[@]}" "$dvcfg_exe" $command -p "$project_dir" -b "$tmp_bsw_pkg_dir" -o "$output_dir" --no-save $@
 
 # Redact generation date
 find "$output_dir" -type f \\( -name "*.c" -o -name "*.h" -o -name "*.lsl" \\) -exec \\
@@ -83,6 +88,9 @@ def cfg6_generation_rule(command_builder, attrs = {}, **kwargs):
             # We need to provide the directory instead of the actual config file
             env["DVCFG_CACHE_CONFIG_LOCATION"] = remote_cache_info.config_file.path.rpartition("/")[0]
             inputs.append(depset([remote_cache_info.config_file]))
+
+        if ctx.attr.timeout_seconds > 0:
+            env["DVCFG_TIMEOUT"] = str(ctx.attr.timeout_seconds)
 
         if ctx.attr._extra_jvm_args:
             env["EXTRA_JVM_ARGS"] = ctx.attr._extra_jvm_args[BuildSettingInfo].value
@@ -121,6 +129,10 @@ def cfg6_generation_rule(command_builder, attrs = {}, **kwargs):
         attrs = dict(
             UPSTREAM_ATTR,
             output_files = attr.output_list(mandatory = False),
+            timeout_seconds = attr.int(
+                default = 0,
+                doc = "Timeout in seconds for the DaVinci Configurator execution. 0 disables the timeout.",
+            ),
             _remote_cache = attr.label(providers = [RemoteCacheInfo], default = Label("//:remote_cache")),
             _extra_jvm_args = attr.label(providers = [BuildSettingInfo], default = Label("//:extra_jvm_args")),
             **attrs
