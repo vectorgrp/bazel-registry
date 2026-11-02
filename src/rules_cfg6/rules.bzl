@@ -989,7 +989,8 @@ def _run_command_impl(name, project, command, inputs, **kwargs):
         project = project,
         command = command,
         inputs = inputs,
-        prefix = kwargs.get("prefix")
+        prefix = kwargs.get("prefix"),
+        tags = ["no-ide"]
     )
     sh_binary(
         name = name,
@@ -1133,7 +1134,8 @@ def _copy_files_impl(name, from_to, env, **kwargs):
     copy_files_script(
         name = script_name,
         from_to = from_to,
-        env = env
+        env = env,
+        tags = ["no-ide"]
     )
     sh_binary(
         name = name,
