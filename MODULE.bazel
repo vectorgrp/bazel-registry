@@ -43,6 +43,8 @@ local_repository(
 cfg6_archive = use_repo_rule("//src/rules_cfg6:defs.bzl", "cfg6_archive")
 cfg6_archive(
     name = "cfg6",
-    nupkg_sha256 = "AF2CBFD697E8C531562ECB92F1CA1FFF123D27253D3F146BEF6255B24B3B5A3B",
-    nupkg_url = "https://packages.vehub.vector.com/nuget/flatcontainer/vector-davinci-configurator-classic/6.2.5/vector-davinci-configurator-classic.6.2.5.nupkg",
+    nupkg_sha256 = "9f1f94054db7cd1d8fff5788c82e5dd4a1445e5d5b8bbaefe72aafd9eda55e96",
+    nupkg_url = "https://packages.vehub.vector.com/nuget/flatcontainer/vector-davinci-configurator-classic-evo2-cli/6.4.6/vector-davinci-configurator-classic-evo2-cli.6.4.6.nupkg",
+    sha256 = "9d3dd8781382424af0f54db12b5f5893a6ae0848a6e676bfaf40f37425c83eb5",
+    url = "https://packages.vehub.vector.com/apt/pool/generic/vector-davinci-configurator-classic/6.4.6/vector-davinci-configurator-classic-evo2-cli-6.4.6.deb",
 )

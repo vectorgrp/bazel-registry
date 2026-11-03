@@ -110,9 +110,10 @@ def _cfg6_repo_files(repository_ctx):
     ext = ".exe" if is_windows else ""
     cli = repository_ctx.path("_/dvcfg" + ext)
     if is_windows:
-        ret = repository_ctx.execute([get_bash(repository_ctx), "-c", '"{}" -v'.format(cli)])
+        windows_bash = get_bash(repository_ctx)
+        ret = repository_ctx.execute([windows_bash, "-c", '"{}" -v'.format(cli)])
         if ret.return_code != 0:
-            fail("\r\nERROR: Failed to call DaVinci Configurator Classic Version 6 from bash. Please use a bash capable of windows-style paths (e.g. git bash). " + ret.stderr)
+            fail("\r\nERROR: Failed to call DaVinci Configurator Classic Version 6 using '" + windows_bash + "'. Please use a bash capable of windows-style paths (e.g. git bash). " + ret.stderr)
     repository_ctx.template("BUILD.bazel", Label("cfg6_BUILD_template.bzl"), substitutions = { ".exe": ext })
     repository_ctx.template("defs.bzl", Label("cfg6_defs_template.bzl"))
     repository_ctx.template("rules.bzl", Label("cfg6_rules_template.bzl"), substitutions = { "CFG6_PAI_VERSION": _pai_version(repository_ctx) })
