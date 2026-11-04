@@ -288,8 +288,8 @@ public class Differ implements IScriptFactory, IScriptTaskCode<IProjectScriptExe
     }
 
     private static String jsonString(String s) {
-        if (s == null || s.length() == 0) {
-            return s;
+        if (s == null) {
+            return null;
         }
         final var sb = new StringBuilder(s.length() + 2).append('"');
         for (var i = 0; i < s.length(); ++i) {
