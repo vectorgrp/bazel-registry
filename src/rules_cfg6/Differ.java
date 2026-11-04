@@ -120,7 +120,6 @@ public class Differ implements IScriptFactory, IScriptTaskCode<IProjectScriptExe
             }
         } else if (theirs == null) {
             report(ours, "ONLY_IN_OURS", out);
-            out.append("{\"id\":\"").append(AsrObjectLink.create(ours).toString()).append("\",\"type\":\"ONLY_IN_OURS\"}\n");
             for (var ourPrm : ours.getParameter()) {
                 compare(ourPrm, getValue(ourPrm), null, null, out);
             }
@@ -135,9 +134,7 @@ public class Differ implements IScriptFactory, IScriptTaskCode<IProjectScriptExe
                     for (var p : entry.getValue()) {
                         compare(p, getValue(p), null, null, out);
                     }
-                } else if (entry.getValue().size() == 1 && t.size() == 1) {
-                    compare(entry.getValue().getFirst(), getValue(entry.getValue().getFirst()), t.getFirst(), getValue(t.getFirst()), out);
-                } else if (compareByIndex(entry.getValue())) {
+                } else if ((entry.getValue().size() == 1 && t.size() == 1) || compareByIndex(entry.getValue())) {
                     entry.getValue().sort(Differ::compareByIndex);
                     t.sort(Differ::compareByIndex);
                     final var oursIt = entry.getValue().iterator();
@@ -167,7 +164,7 @@ public class Differ implements IScriptFactory, IScriptTaskCode<IProjectScriptExe
                                 compare(our.getValue().get(i), our.getKey(), null, null, out);
                             }
                         } else if (their.size() > our.getValue().size()) {
-                            for (var i = their.size(); i < our.getValue().size(); ++i) {
+                            for (var i = our.getValue().size(); i < their.size(); ++i) {
                                 compare(null, null, their.get(i), our.getKey(), out);
                             }
                         }
@@ -243,7 +240,7 @@ public class Differ implements IScriptFactory, IScriptTaskCode<IProjectScriptExe
     private static LinkedHashMap<String, List<MIParameterValue>> getPrmsByValue(List<MIParameterValue> prms) {
         final var result = new LinkedHashMap<String, List<MIParameterValue>>();
         for (var p : prms) {
-            result.computeIfAbsent(getDefinitionName(p.getDefinitionRef()), (k) -> new ArrayList<>(1)).add(p);
+            result.computeIfAbsent(getValue(p), (k) -> new ArrayList<>(1)).add(p);
         }
         return result;
     }
@@ -255,15 +252,9 @@ public class Differ implements IScriptFactory, IScriptTaskCode<IProjectScriptExe
     private static String getValue(MIParameterValue p) {
         String result = null;
         if (p instanceof MITextualValue) {
-            result = ((MITextualValue) p).getValue();
-            if (result != null) {
-                result = "\"" + result + "\"";
-            }
+            result = jsonString(((MITextualValue) p).getValue());
         } else if (p instanceof MIReferenceValue) {
-            result = Optional.ofNullable(((MIReferenceValue) p).getValue()).map(MIARRef::getValue).orElse(null);
-            if (result != null) {
-                result = "\"" + result + "\"";
-            }
+            result = jsonString(Optional.ofNullable(((MIReferenceValue) p).getValue()).map(MIARRef::getValue).orElse(null));
         } else if (p instanceof MINumericalValue num) {
             final var ecucAccess = p.getProjectContext().getInstance(IEcucModelAccess.class);
             if (ecucAccess.containsBoolean(num)) {
@@ -291,10 +282,35 @@ public class Differ implements IScriptFactory, IScriptTaskCode<IProjectScriptExe
                     result += "." + next;
                 }
             }
-            if (result != null) {
-                result = "\"" + result + "\"";
-            }
+            result = jsonString(result);
         }
         return result == null ? "null" : result;
+    }
+
+    private static String jsonString(String s) {
+        if (s == null || s.length() == 0) {
+            return s;
+        }
+        final var sb = new StringBuilder(s.length() + 2).append('"');
+        for (var i = 0; i < s.length(); ++i) {
+            final var c = s.charAt(i);
+            switch (c) {
+                case '"' -> sb.append("\\\"");
+                case '\\' -> sb.append("\\\\");
+                case '\b' -> sb.append("\\b");
+                case '\f' -> sb.append("\\f");
+                case '\n' -> sb.append("\\n");
+                case '\r' -> sb.append("\\r");
+                case '\t' -> sb.append("\\t");
+                default -> {
+                    if (c < 0x20 || c == ' ' || c == ' ') {
+                        sb.append(String.format("\\u%04x", (int) c));
+                    } else {
+                        sb.append(c);
+                    }
+                }
+            }
+        }
+        return sb.append('"').toString();
     }
 }
