@@ -1185,7 +1185,9 @@ if [[ "${{EAC_SPAWN-}}" != 'true' ]]; then
     {diff} Output/Log/EaC/eac_diff.jsonl
     _copy "{project_dir}/Output/Log/EaC" "$BUILD_WORKSPACE_DIRECTORY/.eac-run-artifacts/$(date '+%Y-%m-%d_%H-%M-%S')"
     rm -rf "{project_dir}/Output/Log/EaC"
-fi''',
+fi
+rm -rf '{_parent_dir_}/__'
+''',
         "inputs": inputs | { "-c": jar },
         "tags": tags + ["EAC_SPAWN"]
     }))
