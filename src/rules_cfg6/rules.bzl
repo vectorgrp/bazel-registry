@@ -943,20 +943,23 @@ Use [project_file](#project_file) with the same path as has been procided to `{d
 _EAC_DEV_PREFIX = 'if [[ "${{EAC_SPAWN-}}" == \'true\' ]]; then\n' + _PREPARE_FOLDER + _UNTAR + 'fi\n'
 
 def _fixup_eac_dev_arg(c, dict):
-    i = c.find("//") + 2
-    arg = c[i:]
+    start = c.find("//") + 2
+    end = c.find("\n", start)
+    arg = c[start:end]
     for k in dict.keys():
         arg = arg.replace("{{" + k + "}}", "{" + k + "}")
-    return c[:i] + arg
+    return c[:start] + arg + c[end:]
 
 def _run_command_script_impl(ctx):
     cli = ctx.toolchains[":toolchain_type"].cfg6.cli
+    differ = ctx.toolchains[":toolchain_type"].cfg6.differ
     cmd = ctx.attr.command
     dict = {
         "_upstream_": ctx.attr.project,
         "_parent_dir_": ctx.label.name,
         "project_dir": ctx.label.name + "/_",
-        "dvcfg": cli
+        "dvcfg": cli,
+        "rules_cfg6_differ": differ
     }
     is_hybrid = False
     if ctx.attr.project:
@@ -970,9 +973,9 @@ def _run_command_script_impl(ctx):
             cmd = 'cp -r "{project_dir}/." "{hybrid_dir}"\n' + cmd.replace("{project_dir}", "{hybrid_dir}")
         dict = dict | { "-b": p.bsw_pkg, "-p": '-p "{}"'.format(dvjson) }
     dict = _check_keys(dict, ctx.attr.inputs)
-    cmd = _fixup_eac_dev_arg(cmd, dict) if ctx.attr.prefix == _EAC_DEV_PREFIX else _join_dvcfg_cmds(p, [_fixup_eac_arg(c, is_hybrid, dict) for c in cmd.split("{dvcfg}")], dict)
+    cmd = _join_dvcfg_cmds(p, [_fixup_eac_arg(c, is_hybrid, dict) for c in (_fixup_eac_dev_arg(cmd, dict) if ctx.attr.prefix == _EAC_DEV_PREFIX else cmd).split("{dvcfg}")], dict)
     script = _script(ctx, ctx.label.name + "/script.sh", ctx.attr.prefix + 'export DVCFG_BUILD_SYSTEM_PATH="$BUILD_WORKSPACE_DIRECTORY/{}"\n'.format(ctx.label.package) + cmd, False, dict)
-    return [DefaultInfo(executable = script, runfiles = ctx.runfiles(files = _input_files(dict)).merge(cli[DefaultInfo].default_runfiles))]
+    return [DefaultInfo(executable = script, runfiles = ctx.runfiles(files = _input_files(dict)).merge(cli[DefaultInfo].default_runfiles).merge(differ[DefaultInfo].default_runfiles))]
 
 run_command_script = rule(
     attrs = {
@@ -1179,6 +1182,7 @@ fi
 {dvcfg} eac {-b} {-p}$REST
 ''' + _COPY + '''
 if [[ "${{EAC_SPAWN-}}" != 'true' ]]; then
+    {diff} Output/Log/EaC/eac_diff.jsonl
     _copy "{project_dir}/Output/Log/EaC" "$BUILD_WORKSPACE_DIRECTORY/.eac-run-artifacts/$(date '+%Y-%m-%d_%H-%M-%S')"
     rm -rf "{project_dir}/Output/Log/EaC"
 fi''',
