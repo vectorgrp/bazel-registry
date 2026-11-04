@@ -275,11 +275,13 @@ public class Differ implements IScriptFactory, IScriptTaskCode<IProjectScriptExe
                     result = "???";
                 }
                 while (it.hasNext()) {
-                    var next = it.next().getValue();
-                    if (next == null || next.isEmpty()) {
-                        next = "???";
-                    }
-                    result += "." + next;
+                    final var next = it.next().getValue();
+                    result += "." + (next == null || next.isEmpty() ? "???" : AutosarUtil.getLastShortname(next));
+                }
+                final var target = val.getTarget();
+                if (target != null) {
+                    final var next = target.getValue();
+                    result += "." + (next == null || next.isEmpty() ? "???" : AutosarUtil.getLastShortname(next));
                 }
             }
             result = jsonString(result);
