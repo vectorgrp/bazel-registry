@@ -6,9 +6,9 @@ name, version, readme_title_substitutions = module_build_props("6.4.6")
 
 stardoc(
     name = "stardoc",
-    input = "//src/dvcfg6:ecu_config.bzl",
+    input = "//src/dvcfg6:defs.bzl",
     out = "stardoc.md",
-    deps = ["//build/rules_ecu_config:lib"]
+    deps = ["@cfg6//:defs.bzl", "@cfg6//:rules.bzl", "//build/rules_cfg6:lib"]
 )
 
 expand_template(

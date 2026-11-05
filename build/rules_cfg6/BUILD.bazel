@@ -7,7 +7,14 @@ name, version, readme_title_substitutions = module_build_props("3.9.2")
 
 bzl_library(
     name = "lib",
-    srcs = ["@rules_cfg6//:defs.bzl", "@rules_cfg6//:rules.bzl", "@rules_cfg6//:kt_jar_library.bzl", "//src/rules_cfg6:defs.bzl", "//src/rules_cfg6:rules.bzl", "//src/rules_cfg6:kt_jar_library.bzl"],
+    srcs = [
+        "@rules_cfg6//:defs.bzl",
+        "@rules_cfg6//:rules.bzl",
+        "@rules_cfg6//:kt_jar_library.bzl",
+        "//src/rules_cfg6:defs.bzl",
+        "//src/rules_cfg6:rules.bzl",
+        "//src/rules_cfg6:kt_jar_library.bzl"
+    ],
     deps = [
         "@rules_java//java:rules",
         "@rules_java//java:java_single_jar",
