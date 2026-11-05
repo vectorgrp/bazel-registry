@@ -1,3 +1,4 @@
+load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load("@rules_java//java:defs.bzl", "java_library")
 load("@rules_java//java:java_single_jar.bzl", "java_single_jar")
 load("@rules_java//java/common/rules:java_library.bzl", "JAVA_LIBRARY_ATTRS")
@@ -628,6 +629,9 @@ expand_file_paths = rule(
 )
 
 def _to_paths(ctx, target, build):
+    if BuildSettingInfo in target:
+        v = target[BuildSettingInfo].value
+        return v if type(v) == _LIST_TYPE else [str(v)]
     location_func = "locations" if build else "rlocationpaths"
     paths = [p for t in target for p in ctx.expand_location("$({} {})".format(location_func, t.label), [t]).split(" ")] if type(target) == _LIST_TYPE else ctx.expand_location("$({} {})".format(location_func, target.label), [target]).split(" ")
     result = []
