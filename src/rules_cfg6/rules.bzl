@@ -1020,12 +1020,15 @@ Use `$BUILD_WORKSPACE_DIRECTORY` to specify locations relative to the workspace.
     implementation = _run_command_impl
 )
 
+_NO_DEFAULT_CONTENT = "\0"
+
 def _project_file_impl(ctx):
     out = ctx.actions.declare_file(ctx.attr.out or ctx.label.name)
     path = ctx.attr.path.replace("\\", "/")
     if not path.startswith("./"):
         path = "./" + path
-    ctx.actions.run_shell(outputs = [out], inputs = [ctx.file.project], command = "tar --force-local -xzOf '{}' '{}' > '{}'".format(ctx.file.project.path, path, out.path))
+    cmd = "tar --force-local -xzOf '{}' '{}' " + ("" if ctx.attr.default_content == _NO_DEFAULT_CONTENT else '|| printf \'%s\' "{}" '.format(ctx.attr.default_content.replace('"', '\\"'))) + "> '{}'"
+    ctx.actions.run_shell(outputs = [out], inputs = [ctx.file.project], command = cmd.format(ctx.file.project.path, path, out.path))
     return [DefaultInfo(files = depset([out]))]
 
 project_file = rule(
@@ -1033,7 +1036,8 @@ project_file = rule(
     attrs = {
         "project": attr.label(doc = "The project from which to get the file.", allow_single_file = True, mandatory = True),
         "path": attr.string(doc = "The path of the file relative to the project folder.", mandatory = True),
-        "out": attr.string(doc = "Optional name for the created file (defaults to label name).")
+        "out": attr.string(doc = "Optional name for the created file (defaults to label name)."),
+        "default_content": attr.string(doc = "Optional default content to return in case the project does not contain a file at the given path. Omit this to let the action fail in case the file is missing.", default = _NO_DEFAULT_CONTENT)
     },
     implementation = _project_file_impl
 )
