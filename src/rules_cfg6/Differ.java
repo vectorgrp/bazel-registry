@@ -60,12 +60,16 @@ public class Differ implements IScriptFactory, IScriptTaskCode<IProjectScriptExe
                     open.enableValidation(false);
                 }).openProject(theirs -> {
                     final var theirModules = getModules(theirs.getInstance(IEcucModelAccess.class)).stream().collect(byName());
-                    try (var out = Files.newBufferedWriter(projectFolder.resolve(arg.substring(i)))) {
-                        for (var ourModule : getModules(ctx.getInstance(IEcucModelAccess.class))) {
-                            compare(ourModule, getTheirElement(ourModule, theirModules, MIModuleConfiguration::getDefinitionRef), out);
-                        }
-                        for (var theirModule : theirModules.values()) {
-                            compare(null, theirModule, out);
+                    final var jsonlFile = projectFolder.resolve(arg.substring(i));
+                    try {
+                        Files.createDirectories(jsonlFile.getParent());
+                        try (var out = Files.newBufferedWriter(jsonlFile)) {
+                            for (var ourModule : getModules(ctx.getInstance(IEcucModelAccess.class))) {
+                                compare(ourModule, getTheirElement(ourModule, theirModules, MIModuleConfiguration::getDefinitionRef), out);
+                            }
+                            for (var theirModule : theirModules.values()) {
+                                compare(null, theirModule, out);
+                            }
                         }
                     } catch (IOException e) {
                         throw new RuntimeException(e);

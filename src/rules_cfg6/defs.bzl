@@ -20,7 +20,6 @@ load(":rules.bzl",
     _extract_evs = "extract_evs",
     _merged_arxml = "merged_arxml",
     _open = "open",
-    _eac_dev = "eac_dev",
     _project_folder = "project_folder",
     _project_file = "project_file",
     _apply_command = "apply_command",
@@ -50,7 +49,6 @@ arxml_patch = _arxml_patch
 extract_evs = _extract_evs
 merged_arxml = _merged_arxml
 open = _open
-eac_dev = _eac_dev
 project_folder = _project_folder
 project_file = _project_file
 apply_command = _apply_command
