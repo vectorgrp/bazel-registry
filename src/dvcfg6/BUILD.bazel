@@ -1,10 +1,8 @@
 package(default_visibility = ["//visibility:public"])
 filegroup(name = "srcs", srcs = glob(include = ["**"], exclude = ["BUILD.bazel"]))
-alias(
-    name = "pai",
-    actual = "@cfg6//:pai",
-)
-alias(
-    name = "pai_beta",
-    actual = "@cfg6//:pai_beta",
-)
+alias(name = "pai", actual = "@cfg6//:pai")
+alias(name = "pai_neverlink", actual = "@cfg6//:pai_neverlink")
+alias(name = "pai_testonly", actual = "@cfg6//:pai_testonly")
+alias(name = "pai_beta", actual = "@cfg6//:pai_beta")
+alias(name = "pai_beta_neverlink", actual = "@cfg6//:pai_beta_neverlink")
+alias(name = "pai_beta_testonly", actual = "@cfg6//:pai_beta_testonly")

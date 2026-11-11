@@ -3,11 +3,18 @@ load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
 load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
 load("//build:rules.bzl", "module_build_props", "build_module")
 
-name, version, readme_title_substitutions = module_build_props("3.9.2")
+name, version, readme_title_substitutions = module_build_props("4.0.0")
 
 bzl_library(
     name = "lib",
-    srcs = ["@rules_cfg6//:defs.bzl", "@rules_cfg6//:rules.bzl", "@rules_cfg6//:kt_jar_library.bzl", "//src/rules_cfg6:defs.bzl", "//src/rules_cfg6:rules.bzl", "//src/rules_cfg6:kt_jar_library.bzl"],
+    srcs = [
+        "@rules_cfg6//:defs.bzl",
+        "@rules_cfg6//:rules.bzl",
+        "@rules_cfg6//:kt_jar_library.bzl",
+        "//src/rules_cfg6:defs.bzl",
+        "//src/rules_cfg6:rules.bzl",
+        "//src/rules_cfg6:kt_jar_library.bzl"
+    ],
     deps = [
         "@rules_java//java:rules",
         "@rules_java//java:java_single_jar",

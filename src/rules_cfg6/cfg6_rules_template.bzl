@@ -56,3 +56,21 @@ merged_arxml = macro(
     },
     implementation = lambda **kwargs: _merged_arxml(pai_version = "CFG6_PAI_VERSION", pai = Label(":pai_neverlink"), **kwargs)
 )
+
+def _eac_jar_impl(name, plugins, **kwargs):
+    script_jar(
+        name = name,
+        plugins = plugins + [Label(":eac_annotation_processor")],
+        script_classes = ["com.vector.eac.EaC"],
+        **kwargs
+    )
+
+eac_jar = macro(
+    doc = "Macro for setting up an EaC .jar",
+    inherit_attrs = script_jar,
+    attrs = {
+        "script_classes": None,
+        "plugins": attr.label_list(doc = "[Inherited rule attribute](https://bazel.build/reference/be/java#java_library)", configurable = False),
+    },
+    implementation = _eac_jar_impl
+)
