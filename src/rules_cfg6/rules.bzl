@@ -1026,7 +1026,7 @@ def _project_file_impl(ctx):
     path = ctx.attr.path.replace("\\", "/")
     if not path.startswith("./"):
         path = "./" + path
-    cmd = "{{ tar --force-local -xzOf '{}' '{}' " + ("" if ctx.attr.default_content == _NO_DEFAULT_CONTENT else '|| printf \'%s\' "{}" '.format(ctx.attr.default_content.replace('"', '\\"'))) + "; }} > '{}'"
+    cmd = "{{ tar --force-local -xzOf '{}' '{}'" + ("" if ctx.attr.default_content == _NO_DEFAULT_CONTENT else ' || printf \'%s\' "{}" '.format(ctx.attr.default_content.replace('"', '\\"'))) + "; }} > '{}'"
     ctx.actions.run_shell(outputs = [out], inputs = [ctx.file.project], command = cmd.format(ctx.file.project.path, path, out.path))
     return [DefaultInfo(files = depset([out]))]
 
