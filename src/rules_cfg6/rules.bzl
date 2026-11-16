@@ -116,11 +116,15 @@ def _cfg6_repo_files(repository_ctx):
         windows_bash = get_bash(repository_ctx)
         ret = repository_ctx.execute([windows_bash, "-c", '"{}" -v'.format(cli)])
         if ret.return_code != 0:
-            fail("\r\nERROR: Failed to call DaVinci Configurator Classic Version 6 using '" + windows_bash + "'. Please use a bash capable of windows-style paths (e.g. git bash). " + ret.stderr)
+            fail("""
+ERROR: Failed to call DaVinci Configurator Classic Version 6 using '{}'.
+Please configure a bash capable of windows-style paths in BAZEL_SH repo-env variable.
+E.g. in .bazelrc: common:windows --repo_env=BAZEL_SH='<path>'
+
+""".format(windows_bash) + ret.stderr)
     repository_ctx.template("BUILD.bazel", Label("cfg6_BUILD_template.bzl"), substitutions = { ".exe": ext })
     repository_ctx.template("defs.bzl", Label("cfg6_defs_template.bzl"))
     repository_ctx.template("rules.bzl", Label("cfg6_rules_template.bzl"), substitutions = { "CFG6_PAI_VERSION": _pai_version(repository_ctx) })
-    return cli
 
 def _cfg6_archive_impl(repository_ctx):
     local_dvcfg6 = repository_ctx.getenv("LOCAL_DVCFG6")
@@ -153,8 +157,7 @@ cfg6_archive = repository_rule(
 
 def _local_cfg6_at_path(repository_ctx, s):
     repository_ctx.symlink(absolute_path(repository_ctx, s), "_")
-    cli = _cfg6_repo_files(repository_ctx)
-    repository_ctx.watch(cli.realpath)
+    _cfg6_repo_files(repository_ctx)
 
 def _local_cfg6_impl(repository_ctx):
     _local_cfg6_at_path(repository_ctx , repository_ctx.attr.path)
@@ -959,13 +962,13 @@ def _run_command_script_impl(ctx):
     differ = cfg6.differ
     cmd = ctx.attr.command
     dict = {
-        "_upstream_": ctx.attr.project,
         "_parent_dir_": ctx.label.name,
         "project_dir": ctx.label.name + "/_",
         "dvcfg": cfg6.cli,
         "rules_cfg6_differ": differ
     }
     is_hybrid = False
+    p = None
     if ctx.attr.project:
         p = ctx.attr.project[DvProjectProvider]
         dvjson = ctx.label.name + "/_/" + p.dvjson
@@ -975,10 +978,12 @@ def _run_command_script_impl(ctx):
             dvjson = hybrid_dir + "/" + p.dvjson
             dict = dict | { "hybrid_dir": hybrid_dir }
             cmd = 'cp -r "{project_dir}/." "{hybrid_dir}"\n' + cmd.replace("{project_dir}", "{hybrid_dir}")
-        dict = dict | { "-b": p.bsw_pkg, "-p": '-p "{}"'.format(dvjson) }
+        dict = dict | { "_upstream_": ctx.attr.project, "-b": p.bsw_pkg, "-p": '-p "{}"'.format(dvjson) }
     dict = _check_keys(dict, ctx.attr.inputs)
-    cmd = _join_dvcfg_cmds(p, [_fixup_eac_arg(c, is_hybrid, dict) for c in cmd.split("{dvcfg}")], dict)
-    script = _script(ctx, ctx.label.name + "/script.sh", _PREPARE_FOLDER + _UNTAR + 'export DVCFG_BUILD_SYSTEM_PATH="$BUILD_WORKSPACE_DIRECTORY/{}"\n'.format(ctx.label.package) + cmd, False, dict)
+    cmd = 'export DVCFG_BUILD_SYSTEM_PATH="$BUILD_WORKSPACE_DIRECTORY/{}"\n'.format(ctx.label.package) + _join_dvcfg_cmds(p, [_fixup_eac_arg(c, is_hybrid, dict) for c in cmd.split("{dvcfg}")], dict)
+    if p:
+        cmd = _PREPARE_FOLDER + _UNTAR + cmd
+    script = _script(ctx, ctx.label.name + "/script.sh", cmd, False, dict)
     return [DefaultInfo(executable = script, runfiles = _runfiles(ctx, dict).merge(differ[DefaultInfo].default_runfiles))]
 
 run_command_script = rule(
