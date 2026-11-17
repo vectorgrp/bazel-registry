@@ -311,32 +311,31 @@ def _task_name(task):
     return task[ScriptTaskProvider].task_name.replace('"', '\\"')
 
 def _task_args(ctx):
-    result = ""
+    dict = {}
+    cmd = ""
     for task in ctx.attr.tasks:
         task_provider = task[ScriptTaskProvider]
         args = " ".join(['\\"' + arg.replace('"', '\\\\"') + '\\"' for arg in task_provider.args])
-        file_args = " ".join(['\\"{}\\" \\"{}\\"'.format(arg.replace('"', '\\\\"'), single_file_from_target(value).path) for arg, value in task_provider.file_args.items()])
-        if file_args:
-            args = args + " " + file_args
+        dict = dict | { k + '|\\" \\"--{}='.format(k): v for k, v in task_provider.file_args.items() }
+        for k in task_provider.file_args.keys():
+            args = args + (" " if args else "") + '\\"--{k}={{{k}}}\\"'.format(k = k)
         if args:
-            result += ' -a "{}" -a "{}"'.format(_task_name(task), args)
-    return result
+            cmd += ' -a "{}" -a "{}"'.format(_task_name(task), args)
+    return (dict, cmd)
 
 def _script_patched_arxml_impl(ctx):
     out = ctx.actions.declare_file(ctx.label.name + ".arxml")
-    file_args = [single_file_from_target(target) for task in ctx.attr.tasks for target in task[ScriptTaskProvider].file_args.values()]
-    cfg6 = ctx.toolchains[":toolchain_type"].cfg6
-    dict = {
-        "xpro": cfg6.xpro,
+    args_dict, args = _task_args(ctx)
+    dict = args_dict | {
+        "xpro": ctx.toolchains[":toolchain_type"].cfg6.xpro,
         "src": ctx.files.srcs[0].path,
         "evs":  " -e '{}'".format("','".join([file.path for file in ctx.files.srcs[1:]])) if len(ctx.files.srcs) > 1 else "",
         "scripts|,": ctx.attr.tasks,
         "tasks": "','".join([_task_name(task) for task in ctx.attr.tasks]),
-        "args": _task_args(ctx),
         "out": out.path
     }
-    script = _script(ctx, ctx.label.name + ".sh", "{xpro} run-script -i '{src}'{evs} -l '{scripts}' -t '{tasks}'{args} '{out}'", True, dict)
-    ctx.actions.run_shell(outputs = [out], inputs = _input_files(dict) + file_args + ctx.files.srcs, tools = _action_tools(ctx, script), command = "./" + script.path, env = _exclusive_label(ctx), use_default_shell_env = True)
+    script = _script(ctx, ctx.label.name + ".sh", "{xpro} run-script -i '{src}'{evs} -l '{scripts}' -t '{tasks}'" + args + " '{out}'", True, dict)
+    ctx.actions.run_shell(outputs = [out], inputs = _input_files(dict) + ctx.files.srcs, tools = _action_tools(ctx, script), command = "./" + script.path, env = _exclusive_label(ctx), use_default_shell_env = True)
     return [DefaultInfo(files = depset([out]))]
 
 _SCRIPT_PATCHED_ARXML_ATTRS = {
@@ -470,8 +469,7 @@ script_task = rule(
 )
 
 def _create_project_script_impl(ctx):
-    cli = ctx.toolchains[":toolchain_type"].cfg6.cli
-    dict = { "dvcfg": cli, "-b": ctx.attr.bsw_pkg, "name": ctx.attr.dvjson_name, "folder": ctx.label.package }
+    dict = { "dvcfg": ctx.toolchains[":toolchain_type"].cfg6.cli, "-b": ctx.attr.bsw_pkg, "name": ctx.attr.dvjson_name, "folder": ctx.label.package }
     script = _script(ctx, ctx.label.name + ".sh", '{dvcfg} project create {-b} --project-name {name} -o "$BUILD_WORKSPACE_DIRECTORY/{folder}"', False, dict)
     return [DefaultInfo(executable = script, runfiles = _runfiles(ctx, dict))]
 
@@ -522,9 +520,9 @@ See [hybrid](#hybrid) on how to use this project in the pipeline.""",
 _DBG_SCRIPT_NAME_POSTFIX = "_dbg_script"
 
 def _app_design_dbg_script_impl(ctx):
-    xpro = ctx.toolchains[":toolchain_type"].cfg6.xpro
-    dict = { "xpro": xpro, "input| -e ": ctx.attr.srcs, "-l": ctx.attr.tasks, "task": ctx.attr.task_name, "pkg": ctx.label.package, "name": ctx.label.name[:-len(_DBG_SCRIPT_NAME_POSTFIX)] }
-    script = _script(ctx, ctx.label.name + ".sh", '{xpro} run-script -i {input} {-l} -t "{task}" "$BUILD_WORKSPACE_DIRECTORY/{pkg}/{name}.arxml"', False, dict)
+    args_dict, args = _task_args(ctx)
+    dict = args_dict | { "xpro": ctx.toolchains[":toolchain_type"].cfg6.xpro, "input| -e ": ctx.attr.srcs, "-l": ctx.attr.tasks, "task": ctx.attr.task_name, "pkg": ctx.label.package, "name": ctx.label.name[:-len(_DBG_SCRIPT_NAME_POSTFIX)] }
+    script = _script(ctx, ctx.label.name + ".sh", "{xpro} run-script -i {input} {-l} -t '{task}'" + args + ' "$BUILD_WORKSPACE_DIRECTORY/{pkg}/{name}.arxml"', False, dict)
     return [DefaultInfo(executable = script, runfiles = _runfiles(ctx, dict))]
 
 _APP_DESIGN_ATTRS = dict(
@@ -538,19 +536,21 @@ app_design_dbg_script = rule(
     toolchains = [":toolchain_type"]
 )
 
-def _app_design_impl(name, code, script_classes, task_name, pai_version, **kwargs):
+def _app_design_impl(name, code, script_classes, task_name, file_args, pai_version, allow_beta, **kwargs):
     script_jar_name = name + "_script_jar"
     script_jar(
         name = script_jar_name,
         script_classes = script_classes,
         runtime_deps = code,
-        pai_version = pai_version
+        pai_version = pai_version,
+        allow_beta = allow_beta
     )
     script_task_name = name + "_script_task"
     script_task(
         name = script_task_name,
         script = script_jar_name,
-        task_name = task_name
+        task_name = task_name,
+        file_args = file_args
     )
     tasks = [script_task_name]
     script_patched_arxml(
@@ -580,15 +580,16 @@ app_design = macro(
         tasks = None,
         code = JAVA_LIBRARY_ATTRS["runtime_deps"],
         script_classes = attr.string_list(default = ["AppDesign"], configurable = False),
-        pai_version = attr.string(mandatory = True, configurable = False)
+        pai_version = attr.string(mandatory = True, configurable = False),
+        file_args = attr.string_keyed_label_dict(doc = "Optional file arguments (keys are arg names).", allow_files = True),
+        allow_beta = attr.bool(doc = "Whether to allow usage of beta PAI APIs.", configurable = False)
     ),
     implementation = _app_design_impl
 )
 
 def _derive_ecuc_impl(ctx):
     out = ctx.actions.declare_file(ctx.label.name + ".arxml")
-    dvcfg = ctx.toolchains[":toolchain_type"].cfg6.cli
-    dict = { "dvcfg": dvcfg, "-b": ctx.attr.bsw_pkg, "out": out.path, "srcs": ctx.attr.srcs }
+    dict = { "dvcfg": ctx.toolchains[":toolchain_type"].cfg6.cli, "-b": ctx.attr.bsw_pkg, "out": out.path, "srcs": ctx.attr.srcs }
     cmd = "{dvcfg} derive-ecuc run {-b} "
     if ctx.attr.settings:
         cmd += "{-c} "
