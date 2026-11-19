@@ -170,7 +170,7 @@ local_cfg6 = repository_rule(
     implementation = _local_cfg6_impl
 )
 
-_BSW_PKG_ATTR = { "bsw_pkg": attr.label(doc = "The BSW package folder.", allow_single_file = True, mandatory = True) }
+_BSW_PKG_ATTR = { "bsw_pkg": attr.label(doc = "The BSW package.", allow_files = True, mandatory = True) }
 
 def _runfiles(ctx, dict):
     return ctx.runfiles(files = _input_files(dict), transitive_files = ctx.toolchains[":toolchain_type"].cfg6.files)
@@ -180,7 +180,7 @@ def _action_tools(ctx, script):
 
 def _generate_foundation_layer_script_impl(ctx):
     includelist, substitution = (' {--includelist}', { "--includelist": ctx.attr.filter }) if ctx.attr.filter else ("", {})
-    dict = { "core": ctx.toolchains[":toolchain_type"].cfg6.core, "-b": ctx.attr.bsw_pkg, "-o": ctx.attr.output } | substitution
+    dict = { "core": ctx.toolchains[":toolchain_type"].cfg6.core, _bsw_pkg: ctx.attr.bsw_pkg, "-o": ctx.attr.output } | substitution
     script = _script(ctx, ctx.label.name + ".sh", '{core} -application com.vector.cfg.bswmdmgen.app.flApplication {-b} --force {-o}' + includelist, False, dict)
     return [DefaultInfo(executable = script, runfiles = _runfiles(ctx, dict))]
 
@@ -469,15 +469,12 @@ script_task = rule(
 )
 
 def _create_project_script_impl(ctx):
-    dict = { "dvcfg": ctx.toolchains[":toolchain_type"].cfg6.cli, "-b": ctx.attr.bsw_pkg, "name": ctx.attr.dvjson_name, "folder": ctx.label.package }
+    dict = { "dvcfg": ctx.toolchains[":toolchain_type"].cfg6.cli, _bsw_pkg: ctx.attr.bsw_pkg, "name": ctx.attr.dvjson_name, "folder": ctx.label.package }
     script = _script(ctx, ctx.label.name + ".sh", '{dvcfg} project create {-b} --project-name {name} -o "$BUILD_WORKSPACE_DIRECTORY/{folder}"', False, dict)
     return [DefaultInfo(executable = script, runfiles = _runfiles(ctx, dict))]
 
 create_project_script = rule(
-    attrs = {
-        "bsw_pkg": attr.label(allow_single_file = True, mandatory = True),
-        "dvjson_name": attr.string(mandatory = True)
-    },
+    attrs = _BSW_PKG_ATTR | { "dvjson_name": attr.string(mandatory = True) },
     implementation = _create_project_script_impl,
     toolchains = [":toolchain_type"]
 )
@@ -511,9 +508,7 @@ dvjson(
 
 Now `bazel run //:myecu` will create a new project
 See [hybrid](#hybrid) on how to use this project in the pipeline.""",
-    attrs = {
-        "bsw_pkg": attr.label(doc = "The BSW package folder.", allow_single_file = True, mandatory = True)
-    },
+    attrs = _BSW_PKG_ATTR,
     implementation = _dvjson_impl
 )
 
@@ -589,7 +584,7 @@ app_design = macro(
 
 def _derive_ecuc_impl(ctx):
     out = ctx.actions.declare_file(ctx.label.name + ".arxml")
-    dict = { "dvcfg": ctx.toolchains[":toolchain_type"].cfg6.cli, "-b": ctx.attr.bsw_pkg, "out": out.path, "srcs": ctx.attr.srcs }
+    dict = { "dvcfg": ctx.toolchains[":toolchain_type"].cfg6.cli, _bsw_pkg: ctx.attr.bsw_pkg, "out": out.path, "srcs": ctx.attr.srcs }
     cmd = "{dvcfg} derive-ecuc run {-b} "
     if ctx.attr.settings:
         cmd += "{-c} "
@@ -627,12 +622,14 @@ expand_file_paths = rule(
     implementation = _expand_file_paths_impl,
 )
 
+def _expand_location(ctx, target, build):
+    return ctx.expand_location("$({} {})".format("locations" if build else "rlocationpaths", target.label), [target]).split(" ")
+
 def _to_paths(ctx, target, build):
     if BuildSettingInfo in target:
         v = target[BuildSettingInfo].value
         return v if type(v) == _LIST_TYPE else [str(v)]
-    location_func = "locations" if build else "rlocationpaths"
-    paths = [p for t in target for p in ctx.expand_location("$({} {})".format(location_func, t.label), [t]).split(" ")] if type(target) == _LIST_TYPE else ctx.expand_location("$({} {})".format(location_func, target.label), [target]).split(" ")
+    paths = [p for t in target for p in _expand_location(ctx, t, build)] if type(target) == _LIST_TYPE else _expand_location(ctx, target, build)
     result = []
     tmp = ""
     for s in paths:
@@ -647,10 +644,26 @@ def _to_paths(ctx, target, build):
             result.append(p if build else "$(rlocation {})".format(p))
     return result
 
+def _bsw_pkg(ctx, target, build):
+    paths = _to_paths(ctx, target, build)
+    if len(paths) == 1:
+        return ("-b", "-b " + paths[0])
+    for p in paths:
+        i = p.find("/Components/")
+        if i != -1:
+            return ("-b", "-b " + ((p[:i] + ("'" if p.startswith("'") else "")) if build else '"$(r={}; echo "${{r%%/Components/*}}")"'.format(p)))
+    fail("The BSW package must either be provided as folder or as a label aggregating all BSW package files relevant for DaVinci Configurator Classic Version 6.")
+
+_SPECIAL_KEYS = {
+    _bsw_pkg: "-b"
+}
+
 def _item(ctx, item, build):
     k, v = item
     if type(v) == _PRIMITIVE_TYPE:
         return item
+    if k in _SPECIAL_KEYS:
+        return k(ctx, v, build)
     if k.startswith("-"):
         return (k, k + " " + (" " + k + " ").join(_to_paths(ctx, v, build)))
     key_and_sep = k.split("|")
@@ -682,7 +695,7 @@ def _from_scratch_impl(ctx):
     out = ctx.actions.declare_file(ctx.label.name + "/dvproject.tar.gz")
     cfg6 = ctx.toolchains[":toolchain_type"].cfg6
     cmd = _PREPARE_FOLDER + "{dvcfg} project create {-b} --project-name {name} -o '{project_dir}'"
-    dict = { "_parent_dir_": out.dirname, "project_dir": out.dirname + "/_", "dvcfg": cfg6.cli, "-b": ctx.attr.bsw_pkg, "name": ctx.label.name }
+    dict = { "_parent_dir_": out.dirname, "project_dir": out.dirname + "/_", "dvcfg": cfg6.cli, _bsw_pkg: ctx.attr.bsw_pkg, "name": ctx.label.name }
     if ctx.attr.settings:
         cmd += "\n'{patcher}' '{project_dir}/{name}.dvjson' {settings}"
         dict.update(patcher = cfg6.settings_patcher.executable.path, settings = ctx.attr.settings)
@@ -747,7 +760,7 @@ def _hybrid_impl(ctx):
         dvjson = dvjson_file.basename,
         bsw_pkg = ctx.attr.bsw_pkg,
         hybrid = dvjson_file.dirname,
-        copy_hybrid = "tar " + _COMMON_TAR_OPTS + exclude + " -cf - -C '" + dvjson_file.dirname + "' . | tar --force-local -xf - -C '{project_dir}'"
+        copy_hybrid = "tar " + _COMMON_TAR_OPTS + exclude + " -hcf - -C '" + dvjson_file.dirname + "' . | tar --force-local -xf - -C '{project_dir}'"
     )
     script = _script(ctx, ctx.label.name + "/script.sh", _PREPARE_FOLDER + p.copy_hybrid + _TAR, True, { "_parent_dir_": out.dirname, "project_dir": out.dirname + "/_" })
     ctx.actions.run_shell(outputs = [out], inputs = ctx.files.srcs, tools = [script], command = "./" + script.path, use_default_shell_env = True)
@@ -786,7 +799,8 @@ Modifications to the files invalidate the target even if they are not used in th
 )
 
 def _check_keys(built_in, user):
-    clashes = [k for k in user.keys() if k in built_in]
+    reserved = [_SPECIAL_KEYS.get(k, k) for k in built_in]
+    clashes = [k for k in user.keys() if k in reserved]
     clashes and fail("The following keys are reserved for internal purposes: {}. Please choose different ones.".format(", ".join(clashes)))
     return built_in | user
 
@@ -830,6 +844,7 @@ def _fixup_eac_arg(c, is_hybrid, dict):
         if i != -1:
             arg = c[i + 2:]
             for k in dict.keys():
+                k = _SPECIAL_KEYS.get(k, k)
                 arg = arg.replace("{{" + k + "}}", "{" + k + "}")
             return c[:i + 2] + arg
     return c
@@ -883,7 +898,7 @@ def _internal_apply_command_impl(ctx):
             "_parent_dir_": out.dirname,
             "project_dir": out.dirname + "/_",
             "dvcfg": cfg6.cli,
-            "-b": p.bsw_pkg,
+            _bsw_pkg: p.bsw_pkg,
             "-p": "-p '" + out.dirname + "/_/" + p.dvjson + "'",
             "rules_cfg6_differ": cfg6.differ
         },
@@ -979,7 +994,7 @@ def _run_command_script_impl(ctx):
             dvjson = hybrid_dir + "/" + p.dvjson
             dict = dict | { "hybrid_dir": hybrid_dir }
             cmd = 'cp -r "{project_dir}/." "{hybrid_dir}"\n' + cmd.replace("{project_dir}", "{hybrid_dir}")
-        dict = dict | { "_upstream_": ctx.attr.project, "-b": p.bsw_pkg, "-p": '-p "{}"'.format(dvjson) }
+        dict = dict | { "_upstream_": ctx.attr.project, _bsw_pkg: p.bsw_pkg, "-p": '-p "{}"'.format(dvjson) }
     dict = _check_keys(dict, ctx.attr.inputs)
     cmd = 'export DVCFG_BUILD_SYSTEM_PATH="$BUILD_WORKSPACE_DIRECTORY/{}"\n'.format(ctx.label.package) + _join_dvcfg_cmds(p, [_fixup_eac_arg(c, is_hybrid, dict) for c in cmd.split("{dvcfg}")], dict)
     if p:
