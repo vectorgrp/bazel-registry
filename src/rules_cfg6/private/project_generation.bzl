@@ -71,7 +71,7 @@ def cfg6_generation_rule(command_builder, attrs = {}, **kwargs):
         bsw_pkg_root_dir = get_bsw_pkg_root(project_in)
 
         command = command_builder(ctx)
-        env = {}
+        env = {"HOME": "/tmp"} # required for windows, else git-bash hangs during startup
         args = ctx.actions.args().add(toolchain.cli_exe).add(project_in_root_dir).add(bsw_pkg_root_dir).add(command.command).add(intermediate_output_dir.path)
 
         inputs = [project_in.project_files, project_in.bsw_pkg_files]
@@ -107,6 +107,7 @@ def cfg6_generation_rule(command_builder, attrs = {}, **kwargs):
             ctx.actions.run_shell(
                 command = 'cp -TR "$1/" "$2" || true',
                 arguments = [ctx.actions.args().add(intermediate_output_dir.path).add(output_dir_path)],
+                env =  {"HOME": "/tmp"}, # required for windows, else git-bash hangs during startup
                 inputs = [intermediate_output_dir],
                 outputs = output_files,
             )
