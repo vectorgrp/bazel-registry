@@ -78,7 +78,8 @@ def _cfg6_toolchain_impl(ctx):
         core = ctx.attr.core,
         files = depset(ctx.files.cfg6_files),
         settings_patcher = ctx.attr.settings_patcher[DefaultInfo].files_to_run,
-        differ = ctx.attr.differ
+        differ = ctx.attr.differ,
+        env = ctx.attr.env
     ))]
 
 cfg6_toolchain = rule(
@@ -89,7 +90,8 @@ cfg6_toolchain = rule(
         "core": attr.label(doc = "The DaVinci Configurator core executable.", allow_single_file = True, mandatory = True),
         "cfg6_files": attr.label_list(doc = "All files of the CFG6 installation, declared as tools of every action using one of the executables.", allow_files = True, mandatory = True),
         "settings_patcher": attr.label(executable = True, mandatory = True, cfg = "exec"),
-        "differ": attr.label(mandatory = True)
+        "differ": attr.label(mandatory = True),
+        "env": attr.string_dict(doc = "Environment variables exported by every script calling one of the executables.")
     }
 )
 
@@ -122,7 +124,8 @@ Please configure a bash capable of windows-style paths in BAZEL_SH repo-env vari
 E.g. in .bazelrc: common:windows --repo_env=BAZEL_SH='<path>'
 
 """.format(windows_bash) + ret.stderr)
-    repository_ctx.template("BUILD.bazel", Label("cfg6_BUILD_template.bzl"), substitutions = { ".exe": ext })
+    env = json.encode({} if is_windows else { "DVCFG_REGISTRY_LOCATION": "/tmp/DaVinciCfg/davinci-registry", "XDG_CACHE_HOME": "/tmp/DaVinciCfg/cache", "XDG_STATE_HOME": "/tmp/DaVinciCfg/state" })
+    repository_ctx.template("BUILD.bazel", Label("cfg6_BUILD_template.bzl"), substitutions = { ".exe": ext, "CFG6_ENV": env })
     repository_ctx.template("defs.bzl", Label("cfg6_defs_template.bzl"))
     repository_ctx.template("rules.bzl", Label("cfg6_rules_template.bzl"), substitutions = { "CFG6_PAI_VERSION": _pai_version(repository_ctx) })
 
@@ -175,13 +178,36 @@ _BSW_PKG_ATTR = { "bsw_pkg": attr.label(doc = "The BSW package.", allow_files = 
 def _runfiles(ctx, dict):
     return ctx.runfiles(files = _input_files(dict), transitive_files = ctx.toolchains[":toolchain_type"].cfg6.files)
 
-def _action_tools(ctx, script):
-    return [script, ctx.toolchains[":toolchain_type"].cfg6.files]
+def _uses_cfg6(dict):
+    return "xpro" in dict or "dvcfg" in dict or "core" in dict
+
+def _export_env(ctx):
+    env = ctx.toolchains[":toolchain_type"].cfg6.env
+    exports = ['export {}={}'.format(k, '${{' + '{}:-{}'.format(k, v) + '}}') for k, v in env.items()]
+    return ("\n" + "\n".join(exports) + "\n") if env else ""
+
+def _script(ctx, name, cmd, build, dict):
+    script = ctx.actions.declare_file(name)
+    ctx.actions.write(script, 'set -euo pipefail\n' + cmd.format(**_format_dict(ctx, dict, build)), is_executable = True)
+    return script
+
+def _run_shell(ctx, out, script_content, dict, env, script_name = None, additional_tools = None):
+    script = _script(ctx, script_name or ctx.label.name + ".sh", script_content, True, dict)
+    tools = additional_tools
+    if tools:
+        tools.append(script)
+    else:
+        tools = [script]
+    if _uses_cfg6(dict):
+        env = (ctx.toolchains[":toolchain_type"].cfg6.env | env) if env else ctx.toolchains[":toolchain_type"].cfg6.env
+        tools.append(ctx.toolchains[":toolchain_type"].cfg6.files)
+    ctx.actions.run_shell(outputs = [out], inputs = _input_files(dict), tools = tools, command = "./" + script.path, env = env, use_default_shell_env = True)
+    return DefaultInfo(files = depset([out]))
 
 def _generate_foundation_layer_script_impl(ctx):
     includelist, substitution = (' {--includelist}', { "--includelist": ctx.attr.filter }) if ctx.attr.filter else ("", {})
     dict = { "core": ctx.toolchains[":toolchain_type"].cfg6.core, _bsw_pkg: ctx.attr.bsw_pkg, "-o": ctx.attr.output } | substitution
-    script = _script(ctx, ctx.label.name + ".sh", '{core} -application com.vector.cfg.bswmdmgen.app.flApplication {-b} --force {-o}' + includelist, False, dict)
+    script = _script(ctx, ctx.label.name + ".sh", _export_env(ctx) + '{core} -application com.vector.cfg.bswmdmgen.app.flApplication {-b} --force {-o}' + includelist, False, dict)
     return [DefaultInfo(executable = script, runfiles = _runfiles(ctx, dict))]
 
 generate_foundation_layer_script = rule(
@@ -251,12 +277,9 @@ _PRIMITIVE_TYPE = type("")
 _LIST_TYPE = type([])
 
 def _system_extract_impl(ctx):
-    xpro = ctx.toolchains[":toolchain_type"].cfg6.xpro
     out = ctx.actions.declare_file(ctx.label.name + ".arxml")
-    dict = { "xpro": xpro, "-i": ctx.attr.src, "ecu": ctx.attr.ecu or ctx.label.name, "out": out.path }
-    script = _script(ctx, ctx.label.name + ".sh", "{xpro} extract-sysd {-i} -e {ecu} '{out}'", True, dict)
-    ctx.actions.run_shell(outputs = [out], inputs = _input_files(dict), tools = _action_tools(ctx, script), command = "./" + script.path, env = _exclusive_label(ctx), use_default_shell_env = True)
-    return [DefaultInfo(files = depset([out]))]
+    dict = { "xpro": ctx.toolchains[":toolchain_type"].cfg6.xpro, "-i": ctx.attr.src, "ecu": ctx.attr.ecu or ctx.label.name, "out": out.path }
+    return [_run_shell(ctx, out, "{xpro} extract-sysd {-i} -e {ecu} '{out}'", dict, _exclusive_label(ctx))]
 
 system_extract = rule(
     doc = "Rule for extracting a given ECU from a system description.",
@@ -272,9 +295,7 @@ def _merged_extract_impl(ctx):
     xpro = ctx.toolchains[":toolchain_type"].cfg6.xpro
     out = ctx.actions.declare_file(ctx.label.name + ".arxml")
     dict = { "xpro": xpro, "-i": ctx.attr.src, "out": out.path }
-    script = _script(ctx, ctx.label.name + ".sh", "{xpro} merge {-i} '{out}'", True, dict)
-    ctx.actions.run_shell(outputs = [out], inputs = _input_files(dict), tools = _action_tools(ctx, script), command = "./" + script.path, env = _exclusive_label(ctx), use_default_shell_env = True)
-    return [DefaultInfo(files = depset([out]))]
+    return [_run_shell(ctx, out, "{xpro} merge {-i} '{out}'", dict, _exclusive_label(ctx))]
 
 merged_extract = rule(
     doc = "Rule for merging multiple .arxml files into an ECU extract.",
@@ -292,9 +313,7 @@ def _variant_extract_impl(ctx):
     cmd = '{_xpro} variant-merge {-m} -e {_evs} '
     for variant in ctx.attr.srcs.keys():
         cmd += '-f {v}={{{v}}} '.format(v = variant)
-    script = _script(ctx, ctx.label.name + ".sh", cmd + '"{_out}"', True, dict)
-    ctx.actions.run_shell(outputs = [out], inputs = _input_files(dict), tools = _action_tools(ctx, script), command = "./" + script.path, env = _exclusive_label(ctx), use_default_shell_env = True)
-    return [DefaultInfo(files = depset([out]))]
+    return [_run_shell(ctx, out, cmd + '"{_out}"', dict, _exclusive_label(ctx))]
 
 variant_extract = rule(
     doc = "Rule for creating a variant ECU extract from invariant extracts.",
@@ -332,11 +351,10 @@ def _script_patched_arxml_impl(ctx):
         "evs":  " -e '{}'".format("','".join([file.path for file in ctx.files.srcs[1:]])) if len(ctx.files.srcs) > 1 else "",
         "scripts|,": ctx.attr.tasks,
         "tasks": "','".join([_task_name(task) for task in ctx.attr.tasks]),
-        "out": out.path
+        "out": out.path,
+        "_": ctx.attr.srcs
     }
-    script = _script(ctx, ctx.label.name + ".sh", "{xpro} run-script -i '{src}'{evs} -l '{scripts}' -t '{tasks}'" + args + " '{out}'", True, dict)
-    ctx.actions.run_shell(outputs = [out], inputs = _input_files(dict) + ctx.files.srcs, tools = _action_tools(ctx, script), command = "./" + script.path, env = _exclusive_label(ctx), use_default_shell_env = True)
-    return [DefaultInfo(files = depset([out]))]
+    return [_run_shell(ctx, out, "{xpro} run-script -i '{src}'{evs} -l '{scripts}' -t '{tasks}'" + args + " '{out}'", dict, _exclusive_label(ctx))]
 
 _SCRIPT_PATCHED_ARXML_ATTRS = {
     "srcs": attr.label_list(doc = "The .arxml files to be patched.", allow_files = [".arxml"], default = [Label("empty.arxml")]),
@@ -470,7 +488,7 @@ script_task = rule(
 
 def _create_project_script_impl(ctx):
     dict = { "dvcfg": ctx.toolchains[":toolchain_type"].cfg6.cli, _bsw_pkg: ctx.attr.bsw_pkg, "name": ctx.attr.dvjson_name, "folder": ctx.label.package }
-    script = _script(ctx, ctx.label.name + ".sh", '{dvcfg} project create {-b} --project-name {name} -o "$BUILD_WORKSPACE_DIRECTORY/{folder}"', False, dict)
+    script = _script(ctx, ctx.label.name + ".sh", _export_env(ctx) + '{dvcfg} project create {-b} --project-name {name} -o "$BUILD_WORKSPACE_DIRECTORY/{folder}"', False, dict)
     return [DefaultInfo(executable = script, runfiles = _runfiles(ctx, dict))]
 
 create_project_script = rule(
@@ -517,7 +535,7 @@ _DBG_SCRIPT_NAME_POSTFIX = "_dbg_script"
 def _app_design_dbg_script_impl(ctx):
     args_dict, args = _task_args(ctx)
     dict = args_dict | { "xpro": ctx.toolchains[":toolchain_type"].cfg6.xpro, "input| -e ": ctx.attr.srcs, "-l": ctx.attr.tasks, "task": ctx.attr.task_name, "pkg": ctx.label.package, "name": ctx.label.name[:-len(_DBG_SCRIPT_NAME_POSTFIX)] }
-    script = _script(ctx, ctx.label.name + ".sh", "{xpro} run-script -i {input} {-l} -t '{task}'" + args + ' "$BUILD_WORKSPACE_DIRECTORY/{pkg}/{name}.arxml"', False, dict)
+    script = _script(ctx, ctx.label.name + ".sh", _export_env(ctx) + "{xpro} run-script -i {input} {-l} -t '{task}'" + args + ' "$BUILD_WORKSPACE_DIRECTORY/{pkg}/{name}.arxml"', False, dict)
     return [DefaultInfo(executable = script, runfiles = _runfiles(ctx, dict))]
 
 _APP_DESIGN_ATTRS = dict(
@@ -589,9 +607,7 @@ def _derive_ecuc_impl(ctx):
     if ctx.attr.settings:
         cmd += "{-c} "
         dict = dict | { "-c": ctx.attr.settings }
-    script = _script(ctx, ctx.label.name + ".sh", cmd + "-o '{out}' {srcs}", True, dict)
-    ctx.actions.run_shell(outputs = [out], inputs = _input_files(dict), tools = _action_tools(ctx, script), command = "./" + script.path, env = _exclusive_label(ctx), use_default_shell_env = True)
-    return [DefaultInfo(files = depset([out]))]
+    return [_run_shell(ctx, out, cmd + "-o '{out}' {srcs}", dict, _exclusive_label(ctx))]
 
 derive_ecuc = rule(
     doc = "Derive an ECU configuration from the given input files.",
@@ -686,22 +702,17 @@ _COMMON_TAR_OPTS = "--force-local --exclude '*.~lock' --exclude 'dvcfg.local.pro
 _TAR = "\ntar " + _COMMON_TAR_OPTS + " -zcf '{_parent_dir_}/dvproject.tar.gz' -C '{project_dir}' .\nrm -rf '{project_dir}'"
 _STOP = '\n{dvcfg} stop {-p} --force'
 
-def _script(ctx, name, cmd, build, dict):
-    script = ctx.actions.declare_file(name)
-    ctx.actions.write(script, 'set -euo pipefail\n' + cmd.format(**_format_dict(ctx, dict, build)), is_executable = True)
-    return script
-
 def _from_scratch_impl(ctx):
     out = ctx.actions.declare_file(ctx.label.name + "/dvproject.tar.gz")
     cfg6 = ctx.toolchains[":toolchain_type"].cfg6
     cmd = _PREPARE_FOLDER + "{dvcfg} project create {-b} --project-name {name} -o '{project_dir}'"
     dict = { "_parent_dir_": out.dirname, "project_dir": out.dirname + "/_", "dvcfg": cfg6.cli, _bsw_pkg: ctx.attr.bsw_pkg, "name": ctx.label.name }
+    patcher_tool = None
     if ctx.attr.settings:
         cmd += "\n'{patcher}' '{project_dir}/{name}.dvjson' {settings}"
-        dict.update(patcher = cfg6.settings_patcher.executable.path, settings = ctx.attr.settings)
-    script = _script(ctx, ctx.label.name + "/script.sh", cmd + _TAR, True, dict)
-    ctx.actions.run_shell(outputs = [out], inputs = _input_files(dict), tools = [script, cfg6.files, cfg6.settings_patcher] if ctx.attr.settings else _action_tools(ctx, script), command = "./" + script.path, use_default_shell_env = True, env = _exclusive_label(ctx))
-    return [DefaultInfo(files = depset([out])), DvProjectProvider(dvjson = ctx.label.name + ".dvjson", bsw_pkg = ctx.attr.bsw_pkg)]
+        dict = dict | { "patcher": cfg6.settings_patcher.executable.path, "settings": ctx.attr.settings }
+        patcher_tool = [cfg6.settings_patcher]
+    return [_run_shell(ctx, out, cmd + _TAR, dict, _exclusive_label(ctx), ctx.label.name + "/script.sh", patcher_tool), DvProjectProvider(dvjson = ctx.label.name + ".dvjson", bsw_pkg = ctx.attr.bsw_pkg)]
 
 from_scratch = rule(
     doc = "Create a new DaVinci Configurator Classic Version 6 project.",
@@ -762,9 +773,7 @@ def _hybrid_impl(ctx):
         hybrid = dvjson_file.dirname,
         copy_hybrid = "tar " + _COMMON_TAR_OPTS + exclude + " -hcf - -C '" + dvjson_file.dirname + "' . | tar --force-local -xf - -C '{project_dir}'"
     )
-    script = _script(ctx, ctx.label.name + "/script.sh", _PREPARE_FOLDER + p.copy_hybrid + _TAR, True, { "_parent_dir_": out.dirname, "project_dir": out.dirname + "/_" })
-    ctx.actions.run_shell(outputs = [out], inputs = ctx.files.srcs, tools = [script], command = "./" + script.path, use_default_shell_env = True)
-    return [DefaultInfo(files = depset([out])), p]
+    return [_run_shell(ctx, out, _PREPARE_FOLDER + p.copy_hybrid + _TAR, { "_parent_dir_": out.dirname, "project_dir": out.dirname + "/_", "_": ctx.attr.srcs }, None, ctx.label.name + "/script.sh"), p]
 
 hybrid = rule(
     doc = "Use an existing DaVinci Configurator Classic Version 6 project.",
@@ -849,16 +858,16 @@ def _fixup_eac_arg(c, is_hybrid, dict):
             return c[:i + 2] + arg
     return c
 
-_DIFF = "{diff}"
-
 def _join_dvcfg_cmds(p, commands, dict):
     result = ""
+    differ_used = False
     for cmd_index, cmd in enumerate(commands):
-        diff_cmds = cmd.split(_DIFF)
+        diff_cmds = cmd.split("{diff}")
         dvcfg_prefix = "" if cmd_index == 0 else "{dvcfg}"
         if len(diff_cmds) == 1:
             result = result + dvcfg_prefix + cmd
             continue
+        differ_used = True
         diff_with_predecessor = False
         dvcfg_cmd = diff_cmds[0]
         for diff_cmd in diff_cmds[1:]:
@@ -886,30 +895,29 @@ def _join_dvcfg_cmds(p, commands, dict):
                     + "{dvcfg} automation run {-b} {-p} --no-save -l {rules_cfg6_differ} -t diff -a diff -a '\"-t=../__/" + p.dvjson + jsonl + "\"'\nrm -rf '{_parent_dir_}/__'"\
                     + rest
         result = result + ("" if diff_with_predecessor else dvcfg_prefix) + dvcfg_cmd
-    return result;
+    return (result, differ_used);
 
 def _internal_apply_command_impl(ctx):
     p = ctx.attr.project[DvProjectProvider]
     out = ctx.actions.declare_file(ctx.label.name + "/dvproject.tar.gz")
-    cfg6 = ctx.toolchains[":toolchain_type"].cfg6
     dict = _check_keys(
         {
             "_upstream_": ctx.attr.project,
             "_parent_dir_": out.dirname,
             "project_dir": out.dirname + "/_",
-            "dvcfg": cfg6.cli,
+            "dvcfg": ctx.toolchains[":toolchain_type"].cfg6.cli,
             _bsw_pkg: p.bsw_pkg,
-            "-p": "-p '" + out.dirname + "/_/" + p.dvjson + "'",
-            "rules_cfg6_differ": cfg6.differ
+            "-p": "-p '" + out.dirname + "/_/" + p.dvjson + "'"
         },
         ctx.attr.inputs
     )
     is_hybrid = hasattr(p, "hybrid")
     dvcfg_commands = [_fixup_eac_arg(c, is_hybrid, dict) for c in ctx.attr.command.split("{dvcfg}")]
     hybrid = (p.copy_hybrid + "\n") if (is_hybrid and [c for c in dvcfg_commands if _is_cmd(c, "project", "update")]) else ""
-    script = _script(ctx, ctx.label.name + "/script.sh", _PREPARE_FOLDER + _UNTAR + hybrid + _join_dvcfg_cmds(p, dvcfg_commands, dict) + _STOP + _TAR, True, dict)
-    ctx.actions.run_shell(outputs = [out], inputs = _input_files(dict), tools = _action_tools(ctx, script), command = "./" + script.path, env = ctx.attr.env, use_default_shell_env = True)
-    return [DefaultInfo(files = depset([out])), p]
+    cmd, differ_used = _join_dvcfg_cmds(p, dvcfg_commands, dict)
+    if differ_used:
+        dict = dict | { "rules_cfg6_differ": ctx.toolchains[":toolchain_type"].cfg6.differ }
+    return [_run_shell(ctx, out, _PREPARE_FOLDER + _UNTAR + hybrid + cmd + _STOP + _TAR, dict, ctx.attr.env, ctx.label.name + "/script.sh"), p]
 
 internal_apply_command = rule(
     attrs = {
@@ -974,14 +982,11 @@ Use [project_file](#project_file) with the same path as has been procided to `{d
 )
 
 def _run_command_script_impl(ctx):
-    cfg6 = ctx.toolchains[":toolchain_type"].cfg6
-    differ = cfg6.differ
     cmd = ctx.attr.command
     dict = {
         "_parent_dir_": ctx.label.name,
         "project_dir": ctx.label.name + "/_",
-        "dvcfg": cfg6.cli,
-        "rules_cfg6_differ": differ
+        "dvcfg": ctx.toolchains[":toolchain_type"].cfg6.cli,
     }
     is_hybrid = False
     p = None
@@ -996,11 +1001,18 @@ def _run_command_script_impl(ctx):
             cmd = 'cp -r "{project_dir}/." "{hybrid_dir}"\n' + cmd.replace("{project_dir}", "{hybrid_dir}")
         dict = dict | { "_upstream_": ctx.attr.project, _bsw_pkg: p.bsw_pkg, "-p": '-p "{}"'.format(dvjson) }
     dict = _check_keys(dict, ctx.attr.inputs)
-    cmd = 'export DVCFG_BUILD_SYSTEM_PATH="$BUILD_WORKSPACE_DIRECTORY/{}"\n'.format(ctx.label.package) + _join_dvcfg_cmds(p, [_fixup_eac_arg(c, is_hybrid, dict) for c in cmd.split("{dvcfg}")], dict)
+    cmd, differ_used = _join_dvcfg_cmds(p, [_fixup_eac_arg(c, is_hybrid, dict) for c in cmd.split("{dvcfg}")], dict)
+    if differ_used:
+        differ = ctx.toolchains[":toolchain_type"].cfg6.differ
+        dict = dict | { "rules_cfg6_differ": differ }
+        runfiles = _runfiles(ctx, dict).merge(differ[DefaultInfo].default_runfiles)
+    else:
+        runfiles = _runfiles(ctx, dict)
+    cmd = 'export DVCFG_BUILD_SYSTEM_PATH="$BUILD_WORKSPACE_DIRECTORY/{}"\n'.format(ctx.label.package) + cmd
     if p:
         cmd = _PREPARE_FOLDER + _UNTAR + cmd
-    script = _script(ctx, ctx.label.name + "/script.sh", cmd, False, dict)
-    return [DefaultInfo(executable = script, runfiles = _runfiles(ctx, dict).merge(differ[DefaultInfo].default_runfiles))]
+    script = _script(ctx, ctx.label.name + "/script.sh", _export_env(ctx) + cmd, False, dict)
+    return [DefaultInfo(executable = script, runfiles = runfiles)]
 
 run_command_script = rule(
     attrs = {
