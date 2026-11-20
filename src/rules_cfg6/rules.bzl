@@ -188,7 +188,7 @@ def _export_env(ctx):
 
 def _script(ctx, name, cmd, build, dict):
     script = ctx.actions.declare_file(name)
-    ctx.actions.write(script, 'set -euo pipefail\n' + cmd.format(**_format_dict(ctx, dict, build)), is_executable = True)
+    ctx.actions.write(script, 'set -euo pipefail\nexport PATH="${PATH:+$PATH:}/usr/bin:/bin"\n' + cmd.format(**_format_dict(ctx, dict, build)), is_executable = True)
     return script
 
 def _run_shell(ctx, out, script_content, dict, env, script_name = None, additional_tools = None):
