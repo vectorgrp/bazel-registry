@@ -160,8 +160,18 @@ def _cfg6_archive_impl(repository_ctx):
             output = "_",
             strip_prefix = "opt/vector-davinci-configurator-classic" + prefix
         )
+        _retry(repository_ctx, "dvcfg initialize-installation", ["./_/dvcfg", "initialize-installation"], 20, lambda: repository_ctx.execute(["test", "-s", "./_/dvcfg.aot"]).return_code == 0)
+        jsa = repository_ctx.path("_/java-linux/lib/server/classes_coh.jsa")
+        _retry(repository_ctx, "CDS archive creation", ["./_/java-linux/bin/java", "-XX:+UseCompactObjectHeaders", "-Xshare:dump"], 20, lambda: jsa.exists)
     repository_ctx.delete("_download_")
     _cfg6_repo_files(repository_ctx)
+
+def _retry(repository_ctx, description, cmd, retries, done):
+    for _ in range(retries):
+        ret = repository_ctx.execute(cmd)
+        if ret.return_code == 0 and done():
+            return
+    fail("{} did not succeed after {} attempts:\n{}{}".format(description, retries, ret.stdout, ret.stderr))
 
 cfg6_archive = repository_rule(
     doc = "Rule for using a DaVinci Configurator Classic Version 6 .nupkg or .deb archive. Use a locally installed DaVinci Configurator Classic Version 6 with `--repo_env=LOCAL_DVCFG6='<path>'`.",
