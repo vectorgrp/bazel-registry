@@ -71,6 +71,20 @@ ScriptTaskProvider = provider()
 
 DvProjectProvider = provider()
 
+def _parse_env_entry(entry):
+    k, sep, v = entry.partition("=")
+    if not sep or not k or k[0].isdigit() or not k.replace("_", "a").isalnum():
+        fail("Expected KEY=VALUE for --@rules_cfg6//:env, got: " + entry)
+    return k, v
+
+env_flag = rule(
+    doc = "Repeatable `KEY=VALUE` flag for environment variables applied to every call of a DaVinci Configurator executable.",
+    implementation = lambda ctx: BuildSettingInfo(value = dict([_parse_env_entry(e) for e in ctx.build_setting_value])),
+    build_setting = config.string_list(flag = True, repeatable = True)
+)
+
+_ENV_FLAG_ATTR = { "_env_flag": attr.label(default = Label(":env"), providers = [BuildSettingInfo]) }
+
 def _cfg6_toolchain_impl(ctx):
     return [platform_common.ToolchainInfo(cfg6 = Cfg6ToolProvider(
         cli = ctx.attr.cli,
@@ -78,8 +92,7 @@ def _cfg6_toolchain_impl(ctx):
         core = ctx.attr.core,
         files = depset(ctx.files.cfg6_files),
         settings_patcher = ctx.attr.settings_patcher[DefaultInfo].files_to_run,
-        differ = ctx.attr.differ,
-        env = ctx.attr.env
+        differ = ctx.attr.differ
     ))]
 
 cfg6_toolchain = rule(
@@ -90,8 +103,7 @@ cfg6_toolchain = rule(
         "core": attr.label(doc = "The DaVinci Configurator core executable.", allow_single_file = True, mandatory = True),
         "cfg6_files": attr.label_list(doc = "All files of the CFG6 installation, declared as tools of every action using one of the executables.", allow_files = True, mandatory = True),
         "settings_patcher": attr.label(executable = True, mandatory = True, cfg = "exec"),
-        "differ": attr.label(mandatory = True),
-        "env": attr.string_dict(doc = "Environment variables exported by every script calling one of the executables.")
+        "differ": attr.label(mandatory = True)
     }
 )
 
@@ -124,8 +136,7 @@ Please configure a bash capable of windows-style paths in BAZEL_SH repo-env vari
 E.g. in .bazelrc: common:windows --repo_env=BAZEL_SH='<path>'
 
 """.format(windows_bash) + ret.stderr)
-    env = json.encode({} if is_windows else { "DVCFG_REGISTRY_LOCATION": "/tmp/DaVinciCfg/davinci-registry", "XDG_CACHE_HOME": "/tmp/DaVinciCfg/cache", "XDG_STATE_HOME": "/tmp/DaVinciCfg/state" })
-    repository_ctx.template("BUILD.bazel", Label("cfg6_BUILD_template.bzl"), substitutions = { ".exe": ext, "CFG6_ENV": env })
+    repository_ctx.template("BUILD.bazel", Label("cfg6_BUILD_template.bzl"), substitutions = { ".exe": ext })
     repository_ctx.template("defs.bzl", Label("cfg6_defs_template.bzl"))
     repository_ctx.template("rules.bzl", Label("cfg6_rules_template.bzl"), substitutions = { "CFG6_PAI_VERSION": _pai_version(repository_ctx) })
 
@@ -182,13 +193,15 @@ def _uses_cfg6(dict):
     return "xpro" in dict or "dvcfg" in dict or "core" in dict
 
 def _export_env(ctx):
-    env = ctx.toolchains[":toolchain_type"].cfg6.env
-    exports = ['export {}={}'.format(k, '${{' + '{}:-{}'.format(k, v) + '}}') for k, v in env.items()]
-    return ("\n" + "\n".join(exports) + "\n") if env else ""
+    exports = "\n".join([
+        "export {name}='{value}'".format(name = k, value = v.replace("'", "'\\''").replace("{", "{{").replace("}", "}}"))
+        for k, v in ctx.attr._env_flag[BuildSettingInfo].value.items()
+    ])
+    return ("\n" + exports + "\n") if exports else ""
 
 def _script(ctx, name, cmd, build, dict):
     script = ctx.actions.declare_file(name)
-    ctx.actions.write(script, 'set -euo pipefail\nexport PATH="${PATH:+$PATH:}/usr/bin:/bin"\n' + cmd.format(**_format_dict(ctx, dict, build)), is_executable = True)
+    ctx.actions.write(script, 'set -euo pipefail\n' + cmd.format(**_format_dict(ctx, dict, build)), is_executable = True)
     return script
 
 def _run_shell(ctx, out, script_content, dict, env, script_name = None, additional_tools = None):
@@ -199,9 +212,8 @@ def _run_shell(ctx, out, script_content, dict, env, script_name = None, addition
     else:
         tools = [script]
     if _uses_cfg6(dict):
-        env = (ctx.toolchains[":toolchain_type"].cfg6.env | env) if env else ctx.toolchains[":toolchain_type"].cfg6.env
         tools.append(ctx.toolchains[":toolchain_type"].cfg6.files)
-    ctx.actions.run_shell(outputs = [out], inputs = _input_files(dict), tools = tools, command = "./" + script.path, env = env, use_default_shell_env = True)
+    ctx.actions.run_shell(outputs = [out], inputs = _input_files(dict), tools = tools, command = "./" + script.path, env = (env | ctx.attr._env_flag[BuildSettingInfo].value) if env else ctx.attr._env_flag[BuildSettingInfo].value, use_default_shell_env = True)
     return DefaultInfo(files = depset([out]))
 
 def _generate_foundation_layer_script_impl(ctx):
@@ -211,7 +223,7 @@ def _generate_foundation_layer_script_impl(ctx):
     return [DefaultInfo(executable = script, runfiles = _runfiles(ctx, dict))]
 
 generate_foundation_layer_script = rule(
-    attrs = _BSW_PKG_ATTR | {
+    attrs = _BSW_PKG_ATTR | _ENV_FLAG_ATTR | {
         "output": attr.label(doc = "The destination folder for generated sources.", allow_single_file = True, mandatory = True),
         "filter": attr.label(doc = "Optional filter file containing the definition-references of all modules to be generated, separated by newlines. If this is not provided all modules of the BSW package are generated.", allow_single_file = True)
     },
@@ -283,7 +295,7 @@ def _system_extract_impl(ctx):
 
 system_extract = rule(
     doc = "Rule for extracting a given ECU from a system description.",
-    attrs = {
+    attrs = _ENV_FLAG_ATTR | {
         "src": attr.label(doc = "The system description .arxml files from which to extract the given ECU.", allow_files = [".arxml"], mandatory = True),
         "ecu": attr.string(doc = "The ECU to extract from the given system description (defaults to rule name).")
     },
@@ -299,7 +311,7 @@ def _merged_extract_impl(ctx):
 
 merged_extract = rule(
     doc = "Rule for merging multiple .arxml files into an ECU extract.",
-    attrs = {
+    attrs = _ENV_FLAG_ATTR | {
         "src": attr.label(doc = "The .arxml files to merge into one ECU extract.", allow_files = [".arxml"], mandatory = True),
     },
     implementation = _merged_extract_impl,
@@ -307,17 +319,16 @@ merged_extract = rule(
 )
 
 def _variant_extract_impl(ctx):
-    xpro = ctx.toolchains[":toolchain_type"].cfg6.xpro
     out = ctx.actions.declare_file(ctx.label.name + ".arxml")
-    dict = { "_xpro": xpro, "-m": ctx.attr.config, "_evs|,": ctx.attr.evs, "_out": out.path } | ctx.attr.srcs
-    cmd = '{_xpro} variant-merge {-m} -e {_evs} '
+    cmd = '{xpro} variant-merge {-m} -e {_evs} '
     for variant in ctx.attr.srcs.keys():
         cmd += '-f {v}={{{v}}} '.format(v = variant)
+    dict = _check_keys({ "xpro": ctx.toolchains[":toolchain_type"].cfg6.xpro, "-m": ctx.attr.config, "_evs|,": ctx.attr.evs, "_out": out.path }, ctx.attr.srcs)
     return [_run_shell(ctx, out, cmd + '"{_out}"', dict, _exclusive_label(ctx))]
 
 variant_extract = rule(
     doc = "Rule for creating a variant ECU extract from invariant extracts.",
-    attrs = {
+    attrs = _ENV_FLAG_ATTR | {
         "evs": attr.label(doc = "The .arxml files containing the EvaluatedVariantSet.", allow_files = [".arxml"], mandatory = True),
         "srcs": attr.string_keyed_label_dict(doc = 'One extract file for each variant in the EvaluatedVariantSet. E.g.: { "VariantA": ":ExtractA", ... }', allow_files = [".arxml"], allow_empty = False, mandatory = True),
         "config": attr.label(doc = "The merge configuration .xml file.", allow_single_file = [".xml"], mandatory = True)
@@ -340,7 +351,7 @@ def _task_args(ctx):
             args = args + (" " if args else "") + '\\"--{k}={{{k}}}\\"'.format(k = k)
         if args:
             cmd += ' -a "{}" -a "{}"'.format(_task_name(task), args)
-    return (dict, cmd)
+    return dict, cmd
 
 def _script_patched_arxml_impl(ctx):
     out = ctx.actions.declare_file(ctx.label.name + ".arxml")
@@ -363,7 +374,7 @@ _SCRIPT_PATCHED_ARXML_ATTRS = {
 
 script_patched_arxml = rule(
     doc = "Rule for patching .arxml file content by applying a script task.",
-    attrs = _SCRIPT_PATCHED_ARXML_ATTRS,
+    attrs = _SCRIPT_PATCHED_ARXML_ATTRS | _ENV_FLAG_ATTR,
     implementation = _script_patched_arxml_impl,
     toolchains = [":toolchain_type"]
 )
@@ -492,7 +503,7 @@ def _create_project_script_impl(ctx):
     return [DefaultInfo(executable = script, runfiles = _runfiles(ctx, dict))]
 
 create_project_script = rule(
-    attrs = _BSW_PKG_ATTR | { "dvjson_name": attr.string(mandatory = True) },
+    attrs = _BSW_PKG_ATTR | _ENV_FLAG_ATTR | { "dvjson_name": attr.string(mandatory = True) },
     implementation = _create_project_script_impl,
     toolchains = [":toolchain_type"]
 )
@@ -544,7 +555,7 @@ _APP_DESIGN_ATTRS = dict(
 )
 
 app_design_dbg_script = rule(
-    attrs = _APP_DESIGN_ATTRS,
+    attrs = _APP_DESIGN_ATTRS | _ENV_FLAG_ATTR,
     implementation = _app_design_dbg_script_impl,
     toolchains = [":toolchain_type"]
 )
@@ -611,7 +622,7 @@ def _derive_ecuc_impl(ctx):
 
 derive_ecuc = rule(
     doc = "Derive an ECU configuration from the given input files.",
-    attrs = _BSW_PKG_ATTR | {
+    attrs = _BSW_PKG_ATTR | _ENV_FLAG_ATTR | {
         "settings": attr.label(doc = "Optional configuration file.", allow_single_file = [".json"]),
         "srcs": attr.label_list(doc = "Input files (ECU extract and - for post-build selectable only - EvaluatedVariantSet).", allow_files = [".arxml"], allow_empty = False)
     },
@@ -663,11 +674,11 @@ def _to_paths(ctx, target, build):
 def _bsw_pkg(ctx, target, build):
     paths = _to_paths(ctx, target, build)
     if len(paths) == 1:
-        return ("-b", "-b " + paths[0])
+        return "-b", "-b " + paths[0]
     for p in paths:
         i = p.find("/Components/")
         if i != -1:
-            return ("-b", "-b " + ((p[:i] + ("'" if p.startswith("'") else "")) if build else '"$(r={}; echo "${{r%%/Components/*}}")"'.format(p)))
+            return "-b", "-b " + ((p[:i] + ("'" if p.startswith("'") else "")) if build else '"$(r={}; echo "${{r%%/Components/*}}")"'.format(p))
     fail("The BSW package must either be provided as folder or as a label aggregating all BSW package files relevant for DaVinci Configurator Classic Version 6.")
 
 _SPECIAL_KEYS = {
@@ -681,11 +692,11 @@ def _item(ctx, item, build):
     if k in _SPECIAL_KEYS:
         return k(ctx, v, build)
     if k.startswith("-"):
-        return (k, k + " " + (" " + k + " ").join(_to_paths(ctx, v, build)))
+        return k, k + " " + (" " + k + " ").join(_to_paths(ctx, v, build))
     key_and_sep = k.split("|")
     if len(key_and_sep) != 2:
         key_and_sep = [k, " "]
-    return (key_and_sep[0], key_and_sep[1].join(_to_paths(ctx, v, build)))
+    return key_and_sep[0], key_and_sep[1].join(_to_paths(ctx, v, build))
 
 def _format_dict(ctx, dict, build):
     return { k: v for k, v in [_item(ctx, i, build) for i in dict.items()] }
@@ -716,7 +727,7 @@ def _from_scratch_impl(ctx):
 
 from_scratch = rule(
     doc = "Create a new DaVinci Configurator Classic Version 6 project.",
-    attrs = _BSW_PKG_ATTR | {
+    attrs = _BSW_PKG_ATTR | _ENV_FLAG_ATTR | {
         "settings": attr.label(doc = """Optional JSON file for overriding default project settings.
 E.g., for setting `allowMergeConflicts` in the `General.json` file to `true` and removing the mapping for the `Dcm` module from the `moduleDefinitionMappings` array in the `Ifp.json` file:
 
@@ -777,7 +788,7 @@ def _hybrid_impl(ctx):
 
 hybrid = rule(
     doc = "Use an existing DaVinci Configurator Classic Version 6 project.",
-    attrs = _BSW_PKG_ATTR | {
+    attrs = _BSW_PKG_ATTR | _ENV_FLAG_ATTR | {
         "srcs": attr.label_list(doc = """The files of a checked-in project that invalidate this target when they change:
 
 - The .dvjson file (always required).
@@ -808,8 +819,8 @@ Modifications to the files invalidate the target even if they are not used in th
 )
 
 def _check_keys(built_in, user):
-    reserved = [_SPECIAL_KEYS.get(k, k) for k in built_in]
-    clashes = [k for k in user.keys() if k in reserved]
+    reserved = [_SPECIAL_KEYS.get(k) if k in _SPECIAL_KEYS else k.split("|")[0] for k in built_in]
+    clashes = [k for k in user.keys() if k.split("|")[0] in reserved]
     clashes and fail("The following keys are reserved for internal purposes: {}. Please choose different ones.".format(", ".join(clashes)))
     return built_in | user
 
@@ -826,17 +837,17 @@ Separate multiple CLI calls with newline or semicolon.""", mandatory = True),
 def _next_token_and_rest(s):
     rest = s.lstrip()
     if s.find("\n", 0, len(s) - len(rest)) != -1:
-        return ("", s)
+        return "", s
     s = rest
     if s.startswith('"') or s.startswith("'"):
         segments = s[1:].split(s[0])
         for i, seg in enumerate(segments):
             if not seg.endswith("\\"):
-                return (s[0] + s[0].join(segments[:i + 1]) + s[0], s[0].join(segments[i + 1:]))
+                return s[0] + s[0].join(segments[:i + 1]) + s[0], s[0].join(segments[i + 1:])
     for i in range(len(s)):
         if (s[i].isspace() or s[i] == ";") and (i == 0 or s[i - 1] != "\\"):
-            return (s[:i], s[i:])
-    return (s, "")
+            return s[:i], s[i:]
+    return s, ""
 
 def _is_cmd(s, *cmds):
     for c in cmds:
@@ -895,7 +906,7 @@ def _join_dvcfg_cmds(p, commands, dict):
                     + "{dvcfg} automation run {-b} {-p} --no-save -l {rules_cfg6_differ} -t diff -a diff -a '\"-t=../__/" + p.dvjson + jsonl + "\"'\nrm -rf '{_parent_dir_}/__'"\
                     + rest
         result = result + ("" if diff_with_predecessor else dvcfg_prefix) + dvcfg_cmd
-    return (result, differ_used);
+    return result, differ_used
 
 def _internal_apply_command_impl(ctx):
     p = ctx.attr.project[DvProjectProvider]
@@ -919,11 +930,23 @@ def _internal_apply_command_impl(ctx):
         dict = dict | { "rules_cfg6_differ": ctx.toolchains[":toolchain_type"].cfg6.differ }
     return [_run_shell(ctx, out, _PREPARE_FOLDER + _UNTAR + hybrid + cmd + _STOP + _TAR, dict, ctx.attr.env, ctx.label.name + "/script.sh"), p]
 
+_ENV_ATTR = { "env": attr.string_dict(doc = """Optional environment variables for this command.
+
+To specify "DaVinci-Configurator-6-only" environment variables for individual calls use the repeatable flag `--@rules_cfg6//:env=KEY=VALUE` on the command line:
+
+```
+bazel run //my:target --@rules_cfg6//:env=DVCFG_CACHE_DISABLED=true
+```
+
+Use `--@rules_cfg6//:env` in `.bazelrc` to specify environment variables for all DaVinci Configurator 6 calls:
+
+```
+build:linux --@rules_cfg6//:env=DVCFG_JVM_ARGS="-Djavax.net.ssl.trustStore=/etc/ssl/certs/java/cacerts -Xss2m"
+```
+""") }
+
 internal_apply_command = rule(
-    attrs = {
-        "project": attr.label(doc = "The project to which to apply the command.", allow_single_file = True, providers = [DvProjectProvider], mandatory = True),
-        "env": attr.string_dict(doc = "Optional environment variables."),
-    } | _COMMAND_ATTRS,
+    attrs = _ENV_ATTR | _ENV_FLAG_ATTR | _COMMAND_ATTRS | { "project": attr.label(doc = "The project to which to apply the command.", allow_single_file = True, providers = [DvProjectProvider], mandatory = True) },
     implementation = _internal_apply_command_impl,
     toolchains = [":toolchain_type"]
 )
@@ -973,11 +996,8 @@ is a target pointing to another DaVinci project.
 
 Use [project_file](#project_file) with the same path as has been procided to `{diff}` to extract the created JSONL reports.
 """,
-    attrs = {
-        "project": attr.label(doc = "The project to which to apply the command.", allow_single_file = True, providers = [DvProjectProvider], mandatory = True),
-        "env": attr.string_dict(doc = "Optional environment variables."),
-        "dev_target": attr.bool(doc = "Setting this to `True` results in a convenience development target `<name>_dev` for manually running/debugging the command.", configurable = False)
-    } | _COMMAND_ATTRS,
+    inherit_attrs = internal_apply_command,
+    attrs = { "dev_target": attr.bool(doc = "Setting this to `True` results in a convenience development target `<name>_dev` for manually running/debugging the command.", configurable = False) },
     implementation = _apply_command_impl
 )
 
@@ -1015,9 +1035,7 @@ def _run_command_script_impl(ctx):
     return [DefaultInfo(executable = script, runfiles = runfiles)]
 
 run_command_script = rule(
-    attrs = {
-        "project": attr.label(doc = "The project on which to run the command. Only required if the command needs a project.", allow_single_file = True, providers = [DvProjectProvider]),
-    } | _COMMAND_ATTRS,
+    attrs = _COMMAND_ATTRS | _ENV_FLAG_ATTR | { "project": attr.label(doc = "The project on which to run the command. Only required if the command needs a project.", allow_single_file = True, providers = [DvProjectProvider]) },
     implementation = _run_command_script_impl,
     toolchains = [":toolchain_type"]
 )
@@ -1045,10 +1063,7 @@ See [apply_command](#apply_command) for some examples.
 When running on an hybrid project, the resulting project is written back to the workspace.
 Use `$BUILD_WORKSPACE_DIRECTORY` to specify locations relative to the workspace.""",
     inherit_attrs = run_command_script,
-    attrs = {
-        "env": attr.string_dict(doc = "Optional environment variables."),
-        "tags": attr.string_list(configurable = False)
-    },
+    attrs = _ENV_ATTR | { "tags": attr.string_list(configurable = False) },
     implementation = _run_command_impl
 )
 

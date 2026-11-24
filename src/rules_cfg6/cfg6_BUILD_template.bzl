@@ -6,7 +6,7 @@ package(default_visibility = ["//visibility:public"])
 
 exports_files(["defs.bzl", "rules.bzl"])
 
-cfg6_toolchain(name = "cfg6", cli = "_/dvcfg.exe", xpro = "_/ecuxpro/ecuxpro.exe", core = "_/dvcfgcore/dvcfgcore.exe", cfg6_files = glob(["_/**"]), settings_patcher = ":settings_patcher", differ = ":differ", env = CFG6_ENV)
+cfg6_toolchain(name = "cfg6", cli = "_/dvcfg.exe", xpro = "_/ecuxpro/ecuxpro.exe", core = "_/dvcfgcore/dvcfgcore.exe", cfg6_files = glob(["_/**"]), settings_patcher = ":settings_patcher", differ = ":differ")
 toolchain(name ="toolchain", toolchain = ":cfg6", toolchain_type = "@rules_cfg6//:toolchain_type")
 
 java_import(
