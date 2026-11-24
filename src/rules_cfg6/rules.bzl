@@ -1195,7 +1195,10 @@ copy_files = macro(
 )
 
 def _open_impl(evo1, **kwargs):
-    run_command(command = ("'" + evo1 + "'" if evo1 else "{dvcfg} project start") + " {-b} {-p}\necho 'Project has been opened in DaVinci Configurator Classic Version 6.'\necho 'Terminate this run to shut down DaVinci Configurator Classic Version 6.'\nread -n 1 -s -r -p 'Press any key to terminate...'\necho", **kwargs)
+    run_command(command = ("'" + evo1 + "'" if evo1 else "{dvcfg} project start") + """ {-b} {-p}
+echo 'Project has been opened in DaVinci Configurator Classic Version 6.'
+echo 'Terminate this run to shut down DaVinci Configurator Classic Version 6.'
+read -n 1 -s -r -p 'Press any key to terminate...'""" + _STOP, **kwargs)
 
 open = macro(
     doc = "Open a project in DaVinci Configurator Classic Version 6.",
