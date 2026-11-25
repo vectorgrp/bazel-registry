@@ -124,21 +124,61 @@ def _pai_version(repository_ctx):
 
 def _cfg6_repo_files(repository_ctx):
     is_windows = repository_ctx.os.name.startswith("windows")
-    ext = ".exe" if is_windows else ""
+    ext, java = (".exe", "_/java-win/bin/java.exe") if is_windows else ("", "_/java-linux/bin/java")
     cli = repository_ctx.path("_/dvcfg" + ext)
     if is_windows:
-        windows_bash = get_bash(repository_ctx)
-        ret = repository_ctx.execute([windows_bash, "-c", '"{}" -v'.format(cli)])
+        ret = repository_ctx.execute([cli, "initialize-installation"])
         if ret.return_code != 0:
+            fail("dvcfg initialize-installation failed:\n" + ret.stdout + ret.stderr)
+    else:
+        _retry(
+            lambda: repository_ctx.execute([java, "-XX:+UseCompactObjectHeaders", "-Xshare:dump"]),
+            "CDS archive creation",
+            10,
+            lambda: repository_ctx.path("_/java-linux/lib/server/classes_coh.jsa").exists,
+            True
+        )
+        _retry(
+            lambda: repository_ctx.execute([cli, "initialize-installation"]),
+            "dvcfg initialize-installation",
+            10,
+            lambda: repository_ctx.execute(["test", "-s", "./_/dvcfg.aot"]).return_code == 0
+        )
+    ret = repository_ctx.execute([get_bash(repository_ctx), "-c", str(cli) + ' -v'] if is_windows else [cli, "-v"])
+    if ret.return_code != 0:
+        if is_windows:
             fail("""
 ERROR: Failed to call DaVinci Configurator Classic Version 6 using '{}'.
 Please configure a bash capable of windows-style paths in BAZEL_SH repo-env variable.
 E.g. in .bazelrc: common:windows --repo_env=BAZEL_SH='<path>'
 
-""".format(windows_bash) + ret.stderr)
+""".format(get_bash(repository_ctx)) + ret.stdout + ret.stderr)
+        fail("Failed to detect DaVinci Configurator Classic version:\n" + ret.stdout + ret.stderr)
+    min_version = [6, 5]
+    actual = ret.stdout.strip().lstrip("v").split(".")
+    if len(actual) == 0 or [v for v in actual if not v.isdigit()] or int(actual[0]) != min_version[0]:
+        _fail_incompatible_version(min_version, ret.stdout)
+    i = 0
+    for v in actual:
+        if int(v) < min_version[i]:
+            _fail_incompatible_version(min_version, ret.stdout)
+        i += 1
+        if i == len(min_version):
+            break
     repository_ctx.template("BUILD.bazel", Label("cfg6_BUILD_template.bzl"), substitutions = { ".exe": ext })
     repository_ctx.template("defs.bzl", Label("cfg6_defs_template.bzl"))
     repository_ctx.template("rules.bzl", Label("cfg6_rules_template.bzl"), substitutions = { "CFG6_PAI_VERSION": _pai_version(repository_ctx) })
+
+def _retry(call, description, retries, done, tolerate_failure = False):
+    for _ in range(retries):
+        ret = call()
+        if ret.return_code == 0 and done():
+            return
+    if not tolerate_failure:
+        fail("{} failed:\n{}{}".format(description, ret.stdout, ret.stderr))
+
+def _fail_incompatible_version(required, actual):
+    fail("Incompatible DaVinci Configurator Classic version {}. Current rules_cfg6 require {}. Please update rules_cfg6.".format(actual, ".".join(required)))
 
 def _cfg6_archive_impl(repository_ctx):
     local_dvcfg6 = repository_ctx.getenv("LOCAL_DVCFG6")
@@ -160,18 +200,8 @@ def _cfg6_archive_impl(repository_ctx):
             output = "_",
             strip_prefix = "opt/vector-davinci-configurator-classic" + prefix
         )
-        _retry(repository_ctx, "dvcfg initialize-installation", ["./_/dvcfg", "initialize-installation"], 20, lambda: repository_ctx.execute(["test", "-s", "./_/dvcfg.aot"]).return_code == 0)
-        jsa = repository_ctx.path("_/java-linux/lib/server/classes_coh.jsa")
-        _retry(repository_ctx, "CDS archive creation", ["./_/java-linux/bin/java", "-XX:+UseCompactObjectHeaders", "-Xshare:dump"], 20, lambda: jsa.exists)
     repository_ctx.delete("_download_")
     _cfg6_repo_files(repository_ctx)
-
-def _retry(repository_ctx, description, cmd, retries, done):
-    for _ in range(retries):
-        ret = repository_ctx.execute(cmd)
-        if ret.return_code == 0 and done():
-            return
-    fail("{} did not succeed after {} attempts:\n{}{}".format(description, retries, ret.stdout, ret.stderr))
 
 cfg6_archive = repository_rule(
     doc = "Rule for using a DaVinci Configurator Classic Version 6 .nupkg or .deb archive. Use a locally installed DaVinci Configurator Classic Version 6 with `--repo_env=LOCAL_DVCFG6='<path>'`.",
