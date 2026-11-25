@@ -178,7 +178,7 @@ def _retry(call, description, retries, done, tolerate_failure = False):
         fail("{} failed:\n{}{}".format(description, ret.stdout, ret.stderr))
 
 def _fail_incompatible_version(required, actual):
-    fail("Incompatible DaVinci Configurator Classic version {}. Current rules_cfg6 require {}. Please update rules_cfg6.".format(actual, ".".join(required)))
+    fail("Incompatible DaVinci Configurator Classic version {}. Current rules_cfg6 require {}. Please update DaVinci Configurator Classic.".format(actual.strip(), ".".join([str(v) for v in required])))
 
 def _cfg6_archive_impl(repository_ctx):
     local_dvcfg6 = repository_ctx.getenv("LOCAL_DVCFG6")
