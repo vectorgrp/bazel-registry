@@ -154,17 +154,18 @@ E.g. in .bazelrc: common:windows --repo_env=BAZEL_SH='<path>'
 
 """.format(get_bash(repository_ctx)) + ret.stdout + ret.stderr)
         fail("Failed to detect DaVinci Configurator Classic version:\n" + ret.stdout + ret.stderr)
-    min_version = [6, 5]
-    actual = ret.stdout.strip().lstrip("v").split(".")
-    if len(actual) == 0 or [v for v in actual if not v.isdigit()] or int(actual[0]) != min_version[0]:
-        _fail_incompatible_version(min_version, ret.stdout)
-    i = 0
-    for v in actual:
-        if int(v) < min_version[i]:
+    if not repository_ctx.getenv("DVCFG_SKIP_VERSION_CHECK"):
+        min_version = [6, 5]
+        actual = ret.stdout.strip().lstrip("v").split(".")
+        if len(actual) == 0 or [v for v in actual if not v.isdigit()] or int(actual[0]) != min_version[0]:
             _fail_incompatible_version(min_version, ret.stdout)
-        i += 1
-        if i == len(min_version):
-            break
+        i = 0
+        for v in actual:
+            if int(v) < min_version[i]:
+                _fail_incompatible_version(min_version, ret.stdout)
+            i += 1
+            if i == len(min_version):
+                break
     repository_ctx.template("BUILD.bazel", Label("cfg6_BUILD_template.bzl"), substitutions = { ".exe": ext })
     repository_ctx.template("defs.bzl", Label("cfg6_defs_template.bzl"))
     repository_ctx.template("rules.bzl", Label("cfg6_rules_template.bzl"), substitutions = { "CFG6_PAI_VERSION": _pai_version(repository_ctx) })
