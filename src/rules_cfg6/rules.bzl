@@ -757,18 +757,20 @@ _STOP = '\n{dvcfg} stop {-p} --force'
 def _from_scratch_impl(ctx):
     out = ctx.actions.declare_file(ctx.label.name + "/dvproject.tar.gz")
     cfg6 = ctx.toolchains[":toolchain_type"].cfg6
-    cmd = _PREPARE_FOLDER + "{dvcfg} project create {-b} --project-name {name} -o '{project_dir}'"
-    dict = { "_parent_dir_": out.dirname, "project_dir": out.dirname + "/_", "dvcfg": cfg6.cli, _bsw_pkg: ctx.attr.bsw_pkg, "name": ctx.label.name }
+    cmd = _PREPARE_FOLDER + "{dvcfg} project create {-b} --project-name '{name}' -o '{project_dir}'"
+    name = ctx.attr.project_name or ctx.label.package[ctx.label.package.rfind("/") + 1:] or ctx.label.name
+    dict = { "_parent_dir_": out.dirname, "project_dir": out.dirname + "/_", "dvcfg": cfg6.cli, _bsw_pkg: ctx.attr.bsw_pkg, "name": name }
     patcher_tool = None
     if ctx.attr.settings:
         cmd += "\n'{patcher}' '{project_dir}/{name}.dvjson' {settings}"
         dict = dict | { "patcher": cfg6.settings_patcher.executable.path, "settings": ctx.attr.settings }
         patcher_tool = [cfg6.settings_patcher]
-    return [_run_shell(ctx, out, cmd + _TAR, dict, _exclusive_label(ctx), ctx.label.name + "/script.sh", patcher_tool), DvProjectProvider(dvjson = ctx.label.name + ".dvjson", bsw_pkg = ctx.attr.bsw_pkg)]
+    return [_run_shell(ctx, out, cmd + _TAR, dict, _exclusive_label(ctx), ctx.label.name + "/script.sh", patcher_tool), DvProjectProvider(dvjson = name + ".dvjson", bsw_pkg = ctx.attr.bsw_pkg)]
 
 from_scratch = rule(
     doc = "Create a new DaVinci Configurator Classic Version 6 project.",
     attrs = _BSW_PKG_ATTR | _ENV_FLAG_ATTR | {
+        "project_name": attr.string(doc = "Optional name for the DaVinci project (e.g. used as .dvjson file name). Defaults to last segment of this target's package name or (for targets in the root package) to this target's name."),
         "settings": attr.label(doc = """Optional JSON file for overriding default project settings.
 E.g., for setting `allowMergeConflicts` in the `General.json` file to `true` and removing the mapping for the `Dcm` module from the `moduleDefinitionMappings` array in the `Ifp.json` file:
 
