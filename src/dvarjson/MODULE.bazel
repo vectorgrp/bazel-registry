@@ -1,8 +1,6 @@
 module(name = "dvarjson")
 
-bazel_dep(name = "rules_dvarjson", version = "1.1.0")
-
-dvarjson_archive = use_repo_rule("@rules_dvarjson//:defs.bzl", "dvarjson_archive")
+dvarjson_archive = use_repo_rule("//:dvarjson.bzl", "dvarjson_archive")
 
 dvarjson_archive(
     name = "tool",

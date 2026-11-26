@@ -4,7 +4,9 @@ load(":rules.bzl",
     _extract_evs = "extract_evs",
     _arxml_patch = "arxml_patch",
     _merged_arxml = "merged_arxml",
-    _eac_jar = "eac_jar"
+    _eac_jar = "eac_jar",
+    _script_patched_arxml = "script_patched_arxml",
+    _script_task = "script_task"
 )
 
 script_jar = _script_jar
@@ -13,3 +15,5 @@ extract_evs = _extract_evs
 arxml_patch = _arxml_patch
 merged_arxml = _merged_arxml
 eac_jar = _eac_jar
+script_patched_arxml = _script_patched_arxml
+script_task = _script_task

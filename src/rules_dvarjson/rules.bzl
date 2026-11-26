@@ -1,67 +1,5 @@
-load("@rules_cfg6//:rules.bzl", "default_http_archive_attrs", "download_and_extract")
-
-DvarjsonToolProvider = provider()
-
-def _dvarjson_toolchain_impl(ctx):
-    return [
-        platform_common.ToolchainInfo(
-            dvarjson = DvarjsonToolProvider(
-                cli = ctx.attr.cli
-            )
-        )
-    ]
-
-dvarjson_toolchain = rule(
-    implementation = _dvarjson_toolchain_impl,
-    attrs = {
-        "cli": attr.string(mandatory = True)
-    }
-)
-
-def _dvarjson_repo_files(repository_ctx):
-    repository_ctx.template(
-        "BUILD.bazel",
-        Label(":dvarjson_BUILD_template.bzl"),
-        substitutions = {
-            "CLI": str(repository_ctx.path("_/dvarjson{}".format(".bat" if repository_ctx.os.name.startswith("windows") else ""))),
-        }
-    )
-
-def _dvarjson_archive_impl(repository_ctx):
-    if repository_ctx.os.name.startswith("windows"):
-        download_and_extract(repository_ctx, "_download_", url = repository_ctx.attr.nupkg_url, sha256 = repository_ctx.attr.nupkg_sha256, auth_patterns = repository_ctx.attr.nupkg_auth_patterns)
-        repository_ctx.extract(
-            archive = "_download_/tools/archive.zip",
-            output = "_"
-        )
-    else:
-        download_and_extract(repository_ctx, "_download_")
-        repository_ctx.extract(
-            archive = "_download_/data.tar.zst",
-            output = "_",
-            strip_prefix = "opt/vector/dvarjson"
-        )
-    repository_ctx.delete("_download_")
-    _dvarjson_repo_files(repository_ctx)
-
-dvarjson_archive = repository_rule(
-    doc = "Rule for using a dvarjson .nupkg or .deb archive.",
-    attrs = dict({ "nupkg_" + k: v for k, v in default_http_archive_attrs(".nupkg", "url").items() }.items(), **default_http_archive_attrs(".deb", "nupkg_url")),
-    implementation = _dvarjson_archive_impl
-)
-
-def _local_dvarjson_impl(repository_ctx):
-    repository_ctx.symlink(repository_ctx.attr.path, "_")
-    repository_ctx.watch(repository_ctx.attr.path)
-    _dvarjson_repo_files(repository_ctx)
-
-local_dvarjson = repository_rule(
-    doc = "Rule for using a local dvarjson installation.",
-    attrs = {
-        "path": attr.string(doc = "Path of the dvarjson install folder.", mandatory = True)
-    },
-    implementation = _local_dvarjson_impl
-)
+_TOOLCHAIN = Label("@dvarjson//:toolchain_type")
+_DVARJSON_TOOLCHAIN = [_TOOLCHAIN]
 
 def _dvarjson_convert(ctx, type):
     out = ctx.actions.declare_file(ctx.label.name + ".arxml")
@@ -69,7 +7,7 @@ def _dvarjson_convert(ctx, type):
         outputs = [out],
         inputs = [ctx.file.json],
         command = '"{cli}" {type} convert -i "{json}" -o "{arxml}" -r'.format(
-            cli = ctx.toolchains[":toolchain_type"].dvarjson.cli,
+            cli = ctx.toolchains[_TOOLCHAIN].dvarjson.cli,
             type = type,
             json = ctx.file.json.path,
             arxml = out.path
@@ -87,7 +25,7 @@ evs = rule(
         "json": attr.label(doc = "The EVS .json file.", allow_single_file = [".json"], mandatory = True)
     },
     implementation = _evs_impl,
-    toolchains = [":toolchain_type"]
+    toolchains = _DVARJSON_TOOLCHAIN
 )
 
 def _ddm_json_impl(ctx):
@@ -145,5 +83,5 @@ ddm = rule(
         "json": attr.label(doc = "The DDM .json file.", allow_single_file = [".json"], mandatory = True)
     },
     implementation = _ddm_impl,
-    toolchains = [":toolchain_type"]
+    toolchains = _DVARJSON_TOOLCHAIN
 )

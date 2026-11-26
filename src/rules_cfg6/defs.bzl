@@ -4,21 +4,11 @@ Bazel ruleset for working with [DaVinci Configurator Classic Version 6](https://
 
 load(":kt_jar_library.bzl", _kt_jar_library = "kt_jar_library")
 load(":rules.bzl",
-    _cfg6_archive = "cfg6_archive",
-    _local_cfg6 = "local_cfg6",
-    _cfg6_toolchain = "cfg6_toolchain",
     _generate_foundation_layer = "generate_foundation_layer",
-    _script_jar = "script_jar",
     _system_extract = "system_extract",
     _merged_extract = "merged_extract",
     _variant_extract = "variant_extract",
-    _script_patched_arxml = "script_patched_arxml",
-    _script_task = "script_task",
     _dvjson = "dvjson",
-    _app_design = "app_design",
-    _arxml_patch = "arxml_patch",
-    _extract_evs = "extract_evs",
-    _merged_arxml = "merged_arxml",
     _open = "open",
     _project_folder = "project_folder",
     _project_file = "project_file",
@@ -33,21 +23,11 @@ load(":rules.bzl",
     _derive_ecuc = "derive_ecuc"
 )
 
-cfg6_archive = _cfg6_archive
-local_cfg6 = _local_cfg6
-cfg6_toolchain = _cfg6_toolchain
 generate_foundation_layer = _generate_foundation_layer
-script_jar = _script_jar
 system_extract = _system_extract
 merged_extract = _merged_extract
 variant_extract = _variant_extract
-script_patched_arxml = _script_patched_arxml
-script_task = _script_task
 dvjson = _dvjson
-app_design = _app_design
-arxml_patch = _arxml_patch
-extract_evs = _extract_evs
-merged_arxml = _merged_arxml
 open = _open
 project_folder = _project_folder
 project_file = _project_file
