@@ -1,10 +1,10 @@
 module(name = "dvcfg6")
 
-bazel_dep(name = "bazel_skylib", version = "1.9.0")
+bazel_dep(name = "rules_cfg6", version = "4.0.1")
 bazel_dep(name = "rules_java", version = "9.6.1")
 bazel_dep(name = "rules_shell", version = "0.7.1")
 
-cfg6_archive = use_repo_rule("//:cfg6.bzl", "cfg6_archive")
+cfg6_archive = use_repo_rule("@rules_cfg6//:defs.bzl", "cfg6_archive")
 cfg6_archive(
     name = "cfg6",
     nupkg_sha256 = "9f1f94054db7cd1d8fff5788c82e5dd4a1445e5d5b8bbaefe72aafd9eda55e96",

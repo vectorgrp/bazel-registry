@@ -1,4 +1,4 @@
-load("cfg6.bzl", "default_http_archive_attrs", "download_and_extract", "absolute_path")
+load("@rules_cfg6//:rules.bzl", "default_http_archive_attrs", "download_and_extract", "absolute_path")
 
 def _evo1_archive_impl(repository_ctx):
     folder = repository_ctx.getenv("LOCAL_DVCFG6_EVO1", "_")
