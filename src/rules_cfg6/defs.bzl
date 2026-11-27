@@ -1,12 +1,9 @@
 """
 Bazel ruleset for working with [DaVinci Configurator Classic Version 6](https://help.vector.com/davinci-configurator-classic/en/latest/user-manual/index.html).
 """
-
-load(":kt_jar_library.bzl", _kt_jar_library = "kt_jar_library")
-load(":rules.bzl",
-    _cfg6_archive = "cfg6_archive",
-    _local_cfg6 = "local_cfg6",
-    _cfg6_toolchain = "cfg6_toolchain",
+load("@dvcfg6//:defs.bzl", _evo1_gui = "evo1_gui")
+load("kt_jar_library.bzl", _kt_jar_library = "kt_jar_library")
+load("rules.bzl",
     _generate_foundation_layer = "generate_foundation_layer",
     _script_jar = "script_jar",
     _system_extract = "system_extract",
@@ -30,12 +27,11 @@ load(":rules.bzl",
     _copy_files = "copy_files",
     _list_project_files = "list_project_files",
     _encode_eac_arg = "encode_eac_arg",
-    _derive_ecuc = "derive_ecuc"
+    _derive_ecuc = "derive_ecuc",
+    _eac_jar = "eac_jar"
 )
 
-cfg6_archive = _cfg6_archive
-local_cfg6 = _local_cfg6
-cfg6_toolchain = _cfg6_toolchain
+evo1_gui = _evo1_gui
 generate_foundation_layer = _generate_foundation_layer
 script_jar = _script_jar
 system_extract = _system_extract
@@ -61,4 +57,4 @@ list_project_files = _list_project_files
 encode_eac_arg = _encode_eac_arg
 derive_ecuc = _derive_ecuc
 kt_jar_library = _kt_jar_library
-
+eac_jar = _eac_jar

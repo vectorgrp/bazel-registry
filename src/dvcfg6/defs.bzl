@@ -1,15 +1,12 @@
-load("@cfg6//:defs.bzl",
-    _script_jar = "script_jar",
-    _app_design = "app_design",
-    _extract_evs = "extract_evs",
-    _arxml_patch = "arxml_patch",
-    _merged_arxml = "merged_arxml",
-    _eac_jar = "eac_jar"
-)
+load("@cfg6//:defs.bzl", _pai_version = "pai_version")
+load("@dvcfg6_bridge_gui//:defs.bzl", _evo1_gui = "evo1_gui")
 
-script_jar = _script_jar
-app_design = _app_design
-extract_evs = _extract_evs
-arxml_patch = _arxml_patch
-merged_arxml = _merged_arxml
-eac_jar = _eac_jar
+"""
+The PAI version of DaVinci Configurator Classic Version 6.
+"""
+pai_version = _pai_version
+
+"""
+The Evo1 GUI executable of the @dvcfg6_bridge_gui archive, re-exported for the `evo1` attribute of edit_project.
+"""
+evo1_gui = _evo1_gui

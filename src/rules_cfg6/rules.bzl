@@ -3,6 +3,7 @@ load("@rules_java//java:defs.bzl", "java_library")
 load("@rules_java//java:java_single_jar.bzl", "java_single_jar")
 load("@rules_java//java/common/rules:java_library.bzl", "JAVA_LIBRARY_ATTRS")
 load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+load("@dvcfg6//:defs.bzl", "pai_version")
 
 def encode_eac_arg(arg):
     """JSON-encoding for EaC command line arguments.
@@ -26,46 +27,14 @@ def encode_eac_arg(arg):
     """
     return "//" + json.encode(json.encode(arg).replace("{", "{{").replace("}", "}}"))
 
-def default_http_archive_attrs(archive_name, *mutex_attrs):
-    return {
-        "url": attr.string(doc = "URL of the {} archive.{}".format(archive_name, " Mutually exclusive with `{}`.".format("`, `".join(mutex_attrs)) if mutex_attrs else ""), mandatory = len(mutex_attrs) == 0),
-        "sha256": attr.string(doc = "SHA256 checksum of the {} archive.".format(archive_name)),
-        "auth_patterns": attr.string_dict(doc = "Authorization patterns (see [http_archive](https://bazel.build/rules/lib/repo/http#http_archive-auth_patterns)).")
-    }
-
-def download_and_extract(repository_ctx, output, **kwargs):
-    url = kwargs.get("url")
-    if not url:
-        url = repository_ctx.attr.url
-    sha256 = kwargs.get("sha256")
-    if not sha256 and hasattr(repository_ctx.attr, "sha256"):
-        sha256 = repository_ctx.attr.sha256
-    auth_patterns = kwargs.get("auth_patterns")
-    if auth_patterns == None and hasattr(repository_ctx.attr, "auth_patterns"):
-        auth_patterns = repository_ctx.attr.auth_patterns
-    repository_ctx.download_and_extract(
-        url = url,
-        sha256 = sha256,
-        auth = { url: auth_patterns } if auth_patterns else {},
-        output = output
-    )
-
 def single_file_from_target(target):
     l = target[DefaultInfo].files.to_list()
     if len(l) != 1:
         fail("Expected exactly one file from {} but got {}.".format(target.label, len(l)))
     return l[0]
 
-def get_bash(repository_ctx):
-    return repository_ctx.getenv("BAZEL_SH", "bash")
-
 def _is_absolute(s):
     return s.startswith("/") or s.startswith("\\") or (len(s) > 2 and s[1] == ":" and (s[2] == "/" or s[2] == "\\"))
-
-def absolute_path(repository_ctx, s):
-    return repository_ctx.path(s) if _is_absolute(s) else repository_ctx.path(str(repository_ctx.workspace_root) + "/" + s)
-
-Cfg6ToolProvider = provider()
 
 ScriptTaskProvider = provider()
 
@@ -84,151 +53,15 @@ env_flag = rule(
 )
 
 _ENV_FLAG_ATTR = { "_env_flag": attr.label(default = Label(":env"), providers = [BuildSettingInfo]) }
-
-def _cfg6_toolchain_impl(ctx):
-    return [platform_common.ToolchainInfo(cfg6 = Cfg6ToolProvider(
-        cli = ctx.attr.cli,
-        xpro = ctx.attr.xpro,
-        core = ctx.attr.core,
-        files = depset(ctx.files.cfg6_files),
-        settings_patcher = ctx.attr.settings_patcher[DefaultInfo].files_to_run,
-        differ = ctx.attr.differ
-    ))]
-
-cfg6_toolchain = rule(
-    implementation = _cfg6_toolchain_impl,
-    attrs = {
-        "cli": attr.label(doc = "The DaVinci Configurator CLI executable.", allow_single_file = True, mandatory = True),
-        "xpro": attr.label(doc = "The ECU extract processor executable.", allow_single_file = True, mandatory = True),
-        "core": attr.label(doc = "The DaVinci Configurator core executable.", allow_single_file = True, mandatory = True),
-        "cfg6_files": attr.label_list(doc = "All files of the CFG6 installation, declared as tools of every action using one of the executables.", allow_files = True, mandatory = True),
-        "settings_patcher": attr.label(executable = True, mandatory = True, cfg = "exec"),
-        "differ": attr.label(mandatory = True)
-    }
-)
-
-def _version_from_pai_jar(path):
-    result = path.basename
-    if (result.startswith("automation-interface-") and result.endswith(".jar")):
-        result = result[len("automation-interface-"):len(result) - 4]
-        if (result.find("-") == -1):
-            return result
-
-def _pai_version(repository_ctx):
-    libs_folder = repository_ctx.path("_/dvcfgpai/libs")
-    for path in libs_folder.readdir():
-        v = _version_from_pai_jar(path)
-        if (v):
-            return v
-    fail("Failed to read PAI version from jars in {}.".format(libs_folder))
-
-def _cfg6_repo_files(repository_ctx):
-    is_windows = repository_ctx.os.name.startswith("windows")
-    ext, java = (".exe", "_/java-win/bin/java.exe") if is_windows else ("", "_/java-linux/bin/java")
-    cli = repository_ctx.path("_/dvcfg" + ext)
-    if is_windows:
-        ret = repository_ctx.execute([cli, "initialize-installation"])
-        if ret.return_code != 0:
-            fail("dvcfg initialize-installation failed:\n" + ret.stdout + ret.stderr)
-    else:
-        _retry(
-            lambda: repository_ctx.execute([java, "-XX:+UseCompactObjectHeaders", "-Xshare:dump"]),
-            "CDS archive creation",
-            10,
-            lambda: repository_ctx.path("_/java-linux/lib/server/classes_coh.jsa").exists,
-            True
-        )
-        _retry(
-            lambda: repository_ctx.execute([cli, "initialize-installation"]),
-            "dvcfg initialize-installation",
-            10,
-            lambda: repository_ctx.execute(["test", "-s", "./_/dvcfg.aot"]).return_code == 0
-        )
-    ret = repository_ctx.execute([get_bash(repository_ctx), "-c", str(cli) + ' -v'] if is_windows else [cli, "-v"])
-    if ret.return_code != 0:
-        if is_windows:
-            fail("""
-ERROR: Failed to call DaVinci Configurator Classic Version 6 using '{}'.
-Please configure a bash capable of windows-style paths in BAZEL_SH repo-env variable.
-E.g. in .bazelrc: common:windows --repo_env=BAZEL_SH='<path>'
-
-""".format(get_bash(repository_ctx)) + ret.stdout + ret.stderr)
-        fail("Failed to detect DaVinci Configurator Classic version:\n" + ret.stdout + ret.stderr)
-    if not repository_ctx.getenv("DVCFG_SKIP_VERSION_CHECK"):
-        min_version = [6, 5]
-        actual = ret.stdout.strip().lstrip("v").split(".")
-        if len(actual) == 0 or [v for v in actual if not v.isdigit()] or int(actual[0]) != min_version[0]:
-            _fail_incompatible_version(min_version, ret.stdout)
-        i = 0
-        for v in actual:
-            if int(v) < min_version[i]:
-                _fail_incompatible_version(min_version, ret.stdout)
-            i += 1
-            if i == len(min_version):
-                break
-    repository_ctx.template("BUILD.bazel", Label("cfg6_BUILD_template.bzl"), substitutions = { ".exe": ext })
-    repository_ctx.template("defs.bzl", Label("cfg6_defs_template.bzl"))
-    repository_ctx.template("rules.bzl", Label("cfg6_rules_template.bzl"), substitutions = { "CFG6_PAI_VERSION": _pai_version(repository_ctx) })
-
-def _retry(call, description, retries, done, tolerate_failure = False):
-    for _ in range(retries):
-        ret = call()
-        if ret.return_code == 0 and done():
-            return
-    if not tolerate_failure:
-        fail("{} failed:\n{}{}".format(description, ret.stdout, ret.stderr))
-
-def _fail_incompatible_version(required, actual):
-    fail("Incompatible DaVinci Configurator Classic version {}. Current rules_cfg6 require {}. Please update DaVinci Configurator Classic.".format(actual.strip(), ".".join([str(v) for v in required])))
-
-def _cfg6_archive_impl(repository_ctx):
-    local_dvcfg6 = repository_ctx.getenv("LOCAL_DVCFG6")
-    if local_dvcfg6:
-        _local_cfg6_at_path(repository_ctx, local_dvcfg6)
-        return
-    if repository_ctx.os.name.startswith("windows"):
-        download_and_extract(repository_ctx, "_download_", url = repository_ctx.attr.nupkg_url, sha256 = repository_ctx.attr.nupkg_sha256, auth_patterns = repository_ctx.attr.nupkg_auth_patterns)
-        repository_ctx.extract(
-            archive = "_download_/tools/archive.zip",
-            output = "_"
-        )
-    else:
-        prefix = repository_ctx.attr.url
-        prefix = prefix[prefix.rindex("/") + len("vector-davinci-configurator-classic") + 1:-4].replace("-", "/")
-        download_and_extract(repository_ctx, "_download_")
-        repository_ctx.extract(
-            archive = "_download_/data.tar.zst",
-            output = "_",
-            strip_prefix = "opt/vector-davinci-configurator-classic" + prefix
-        )
-    repository_ctx.delete("_download_")
-    _cfg6_repo_files(repository_ctx)
-
-cfg6_archive = repository_rule(
-    doc = "Rule for using a DaVinci Configurator Classic Version 6 .nupkg or .deb archive. Use a locally installed DaVinci Configurator Classic Version 6 with `--repo_env=LOCAL_DVCFG6='<path>'`.",
-    attrs = { "nupkg_" + k: v for k, v in default_http_archive_attrs(".nupkg", "url").items() } | default_http_archive_attrs(".deb", "nupkg_url"),
-    implementation = _cfg6_archive_impl
-)
-
-def _local_cfg6_at_path(repository_ctx, s):
-    repository_ctx.symlink(absolute_path(repository_ctx, s), "_")
-    _cfg6_repo_files(repository_ctx)
-
-def _local_cfg6_impl(repository_ctx):
-    _local_cfg6_at_path(repository_ctx , repository_ctx.attr.path)
-
-local_cfg6 = repository_rule(
-    doc = "Rule for using a local DaVinci Configurator Classic Version 6 installation.",
-    attrs = {
-        "path": attr.string(doc = "Path (absolute or relative to workspace root) of the dvcfg install folder.", mandatory = True)
-    },
-    implementation = _local_cfg6_impl
-)
-
 _BSW_PKG_ATTR = { "bsw_pkg": attr.label(doc = "The BSW package.", allow_files = True, mandatory = True) }
+_TOOLCHAIN = Label("@dvcfg6//:toolchain_type")
+_CFG6_TOOLCHAIN = [_TOOLCHAIN]
+
+def _cfg6(ctx):
+    return ctx.toolchains[_TOOLCHAIN].cfg6
 
 def _runfiles(ctx, dict):
-    return ctx.runfiles(files = _input_files(dict), transitive_files = ctx.toolchains[":toolchain_type"].cfg6.files)
+    return ctx.runfiles(files = _input_files(dict), transitive_files = _cfg6(ctx).files)
 
 def _uses_cfg6(dict):
     return "xpro" in dict or "dvcfg" in dict or "core" in dict
@@ -253,13 +86,13 @@ def _run_shell(ctx, out, script_content, dict, env, script_name = None, addition
     else:
         tools = [script]
     if _uses_cfg6(dict):
-        tools.append(ctx.toolchains[":toolchain_type"].cfg6.files)
+        tools.append(_cfg6(ctx).files)
     ctx.actions.run_shell(outputs = [out], inputs = _input_files(dict), tools = tools, command = "./" + script.path, env = (env | ctx.attr._env_flag[BuildSettingInfo].value) if env else ctx.attr._env_flag[BuildSettingInfo].value, use_default_shell_env = True)
     return DefaultInfo(files = depset([out]))
 
 def _generate_foundation_layer_script_impl(ctx):
     includelist, substitution = (' {--includelist}', { "--includelist": ctx.attr.filter }) if ctx.attr.filter else ("", {})
-    dict = { "core": ctx.toolchains[":toolchain_type"].cfg6.core, _bsw_pkg: ctx.attr.bsw_pkg, "-o": ctx.attr.output } | substitution
+    dict = { "core": _cfg6(ctx).core, _bsw_pkg: ctx.attr.bsw_pkg, "-o": ctx.attr.output } | substitution
     script = _script(ctx, ctx.label.name + ".sh", _export_env(ctx) + '{core} -application com.vector.cfg.bswmdmgen.app.flApplication {-b} --force {-o}' + includelist, False, dict)
     return [DefaultInfo(executable = script, runfiles = _runfiles(ctx, dict))]
 
@@ -269,7 +102,7 @@ generate_foundation_layer_script = rule(
         "filter": attr.label(doc = "Optional filter file containing the definition-references of all modules to be generated, separated by newlines. If this is not provided all modules of the BSW package are generated.", allow_single_file = True)
     },
     implementation = _generate_foundation_layer_script_impl,
-    toolchains = [":toolchain_type"]
+    toolchains = _CFG6_TOOLCHAIN
 )
 
 def _generate_foundation_layer_impl(name, visibility, tags, **kwargs):
@@ -294,7 +127,7 @@ generate_foundation_layer = macro(
     implementation = _generate_foundation_layer_impl
 )
 
-def _script_jar_impl(name, pai_version, script_classes, allow_beta, tags, visibility, **kwargs):
+def _script_jar_impl(name, script_classes, allow_beta, tags, visibility, **kwargs):
     lib_name = name + "_lib"
     java_library(
         name = lib_name,
@@ -315,7 +148,6 @@ def _script_jar_impl(name, pai_version, script_classes, allow_beta, tags, visibi
 script_jar = macro(
     doc = "Internal macro for setting up a PAI project.",
     attrs = dict({ k: v for k, v in JAVA_LIBRARY_ATTRS.items() if not k.startswith("_") },
-        pai_version = attr.string(mandatory = True, configurable = False),
         script_classes = attr.string_list(doc = "ScriptFactory class names.", mandatory = True, allow_empty = False, configurable = False),
         tags = attr.string_list(doc = "[Inherited rule attribute](https://bazel.build/reference/be/common-definitions#common-attributes)", configurable = False),
         allow_beta = attr.bool(doc = "Whether to allow usage of beta PAI APIs.", configurable = False)
@@ -331,7 +163,7 @@ _LIST_TYPE = type([])
 
 def _system_extract_impl(ctx):
     out = ctx.actions.declare_file(ctx.label.name + ".arxml")
-    dict = { "xpro": ctx.toolchains[":toolchain_type"].cfg6.xpro, "-i": ctx.attr.src, "ecu": ctx.attr.ecu or ctx.label.name, "out": out.path }
+    dict = { "xpro": _cfg6(ctx).xpro, "-i": ctx.attr.src, "ecu": ctx.attr.ecu or ctx.label.name, "out": out.path }
     return [_run_shell(ctx, out, "{xpro} extract-sysd {-i} -e {ecu} '{out}'", dict, _exclusive_label(ctx))]
 
 system_extract = rule(
@@ -341,11 +173,11 @@ system_extract = rule(
         "ecu": attr.string(doc = "The ECU to extract from the given system description (defaults to rule name).")
     },
     implementation = _system_extract_impl,
-    toolchains = [":toolchain_type"]
+    toolchains = _CFG6_TOOLCHAIN
 )
 
 def _merged_extract_impl(ctx):
-    xpro = ctx.toolchains[":toolchain_type"].cfg6.xpro
+    xpro = _cfg6(ctx).xpro
     out = ctx.actions.declare_file(ctx.label.name + ".arxml")
     dict = { "xpro": xpro, "-i": ctx.attr.src, "out": out.path }
     return [_run_shell(ctx, out, "{xpro} merge {-i} '{out}'", dict, _exclusive_label(ctx))]
@@ -356,7 +188,7 @@ merged_extract = rule(
         "src": attr.label(doc = "The .arxml files to merge into one ECU extract.", allow_files = [".arxml"], mandatory = True),
     },
     implementation = _merged_extract_impl,
-    toolchains = [":toolchain_type"]
+    toolchains = _CFG6_TOOLCHAIN
 )
 
 def _variant_extract_impl(ctx):
@@ -364,7 +196,7 @@ def _variant_extract_impl(ctx):
     cmd = '{xpro} variant-merge {-m} -e {_evs} '
     for variant in ctx.attr.srcs.keys():
         cmd += '-f {v}={{{v}}} '.format(v = variant)
-    dict = _check_keys({ "xpro": ctx.toolchains[":toolchain_type"].cfg6.xpro, "-m": ctx.attr.config, "_evs|,": ctx.attr.evs, "_out": out.path }, ctx.attr.srcs)
+    dict = _check_keys({ "xpro": _cfg6(ctx).xpro, "-m": ctx.attr.config, "_evs|,": ctx.attr.evs, "_out": out.path }, ctx.attr.srcs)
     return [_run_shell(ctx, out, cmd + '"{_out}"', dict, _exclusive_label(ctx))]
 
 variant_extract = rule(
@@ -375,7 +207,7 @@ variant_extract = rule(
         "config": attr.label(doc = "The merge configuration .xml file.", allow_single_file = [".xml"], mandatory = True)
     },
     implementation = _variant_extract_impl,
-    toolchains = [":toolchain_type"]
+    toolchains = _CFG6_TOOLCHAIN
 )
 
 def _task_name(task):
@@ -398,7 +230,7 @@ def _script_patched_arxml_impl(ctx):
     out = ctx.actions.declare_file(ctx.label.name + ".arxml")
     args_dict, args = _task_args(ctx)
     dict = args_dict | {
-        "xpro": ctx.toolchains[":toolchain_type"].cfg6.xpro,
+        "xpro": _cfg6(ctx).xpro,
         "src": ctx.files.srcs[0].path,
         "evs":  " -e '{}'".format("','".join([file.path for file in ctx.files.srcs[1:]])) if len(ctx.files.srcs) > 1 else "",
         "scripts|,": ctx.attr.tasks,
@@ -417,7 +249,7 @@ script_patched_arxml = rule(
     doc = "Rule for patching .arxml file content by applying a script task.",
     attrs = _SCRIPT_PATCHED_ARXML_ATTRS | _ENV_FLAG_ATTR,
     implementation = _script_patched_arxml_impl,
-    toolchains = [":toolchain_type"]
+    toolchains = _CFG6_TOOLCHAIN
 )
 
 def _arxml_patcher_src_impl(ctx):
@@ -474,14 +306,13 @@ arxml_patch = macro(
     implementation = _arxml_patch_impl
 )
 
-def _extract_evs_impl(name, pai, pai_version, short_name_path, **kwargs):
+def _extract_evs_impl(name, pai, short_name_path, **kwargs):
     arxml_patch_name = name + "_arxml_patch"
     arxml_patch(
         name = arxml_patch_name,
         srcs = [Label("EvsExtractor.java")],
         call = 'EvsExtractor.run("{}")'.format(short_name_path),
         deps = [pai],
-        pai_version = pai_version
     )
     script_patched_arxml(
         name = name,
@@ -492,7 +323,6 @@ def _extract_evs_impl(name, pai, pai_version, short_name_path, **kwargs):
 _PATCHER_MACRO_ATTRS = {
    "srcs": _SCRIPT_PATCHED_ARXML_ATTRS["srcs"],
    "pai": attr.label(mandatory = True, configurable = False),
-   "pai_version": attr.string(mandatory = True, configurable = False)
 }
 
 extract_evs = macro(
@@ -501,13 +331,12 @@ extract_evs = macro(
     implementation = _extract_evs_impl
 )
 
-def _merged_arxml_impl(name, pai, pai_version, **kwargs):
+def _merged_arxml_impl(name, pai, **kwargs):
     arxml_patch_name = name + "_no_patch"
     arxml_patch(
         name = arxml_patch_name,
         call = "// JUST MERGE - NO PATCH",
         deps = [pai],
-        pai_version = pai_version
     )
     script_patched_arxml(
         name = name,
@@ -539,14 +368,14 @@ script_task = rule(
 )
 
 def _create_project_script_impl(ctx):
-    dict = { "dvcfg": ctx.toolchains[":toolchain_type"].cfg6.cli, _bsw_pkg: ctx.attr.bsw_pkg, "name": ctx.attr.dvjson_name, "folder": ctx.label.package }
+    dict = { "dvcfg": _cfg6(ctx).cli, _bsw_pkg: ctx.attr.bsw_pkg, "name": ctx.attr.dvjson_name, "folder": ctx.label.package }
     script = _script(ctx, ctx.label.name + ".sh", _export_env(ctx) + '{dvcfg} project create {-b} --project-name {name} -o "$BUILD_WORKSPACE_DIRECTORY/{folder}"', False, dict)
     return [DefaultInfo(executable = script, runfiles = _runfiles(ctx, dict))]
 
 create_project_script = rule(
     attrs = _BSW_PKG_ATTR | _ENV_FLAG_ATTR | { "dvjson_name": attr.string(mandatory = True) },
     implementation = _create_project_script_impl,
-    toolchains = [":toolchain_type"]
+    toolchains = _CFG6_TOOLCHAIN
 )
 
 def _dvjson_impl(name, bsw_pkg, **kwargs):
@@ -586,7 +415,7 @@ _DBG_SCRIPT_NAME_POSTFIX = "_dbg_script"
 
 def _app_design_dbg_script_impl(ctx):
     args_dict, args = _task_args(ctx)
-    dict = args_dict | { "xpro": ctx.toolchains[":toolchain_type"].cfg6.xpro, "input| -e ": ctx.attr.srcs, "-l": ctx.attr.tasks, "task": ctx.attr.task_name, "pkg": ctx.label.package, "name": ctx.label.name[:-len(_DBG_SCRIPT_NAME_POSTFIX)] }
+    dict = args_dict | { "xpro": _cfg6(ctx).xpro, "input| -e ": ctx.attr.srcs, "-l": ctx.attr.tasks, "task": ctx.attr.task_name, "pkg": ctx.label.package, "name": ctx.label.name[:-len(_DBG_SCRIPT_NAME_POSTFIX)] }
     script = _script(ctx, ctx.label.name + ".sh", _export_env(ctx) + "{xpro} run-script -i {input} {-l} -t '{task}'" + args + ' "$BUILD_WORKSPACE_DIRECTORY/{pkg}/{name}.arxml"', False, dict)
     return [DefaultInfo(executable = script, runfiles = _runfiles(ctx, dict))]
 
@@ -598,16 +427,15 @@ _APP_DESIGN_ATTRS = dict(
 app_design_dbg_script = rule(
     attrs = _APP_DESIGN_ATTRS | _ENV_FLAG_ATTR,
     implementation = _app_design_dbg_script_impl,
-    toolchains = [":toolchain_type"]
+    toolchains = _CFG6_TOOLCHAIN
 )
 
-def _app_design_impl(name, code, script_classes, task_name, file_args, pai_version, allow_beta, **kwargs):
+def _app_design_impl(name, code, script_classes, task_name, file_args, allow_beta, **kwargs):
     script_jar_name = name + "_script_jar"
     script_jar(
         name = script_jar_name,
         script_classes = script_classes,
         runtime_deps = code,
-        pai_version = pai_version,
         allow_beta = allow_beta
     )
     script_task_name = name + "_script_task"
@@ -645,7 +473,6 @@ app_design = macro(
         tasks = None,
         code = JAVA_LIBRARY_ATTRS["runtime_deps"],
         script_classes = attr.string_list(default = ["AppDesign"], configurable = False),
-        pai_version = attr.string(mandatory = True, configurable = False),
         file_args = attr.string_keyed_label_dict(doc = "Optional file arguments (keys are arg names).", allow_files = True),
         allow_beta = attr.bool(doc = "Whether to allow usage of beta PAI APIs.", configurable = False)
     ),
@@ -654,7 +481,7 @@ app_design = macro(
 
 def _derive_ecuc_impl(ctx):
     out = ctx.actions.declare_file(ctx.label.name + ".arxml")
-    dict = { "dvcfg": ctx.toolchains[":toolchain_type"].cfg6.cli, _bsw_pkg: ctx.attr.bsw_pkg, "out": out.path, "srcs": ctx.attr.srcs }
+    dict = { "dvcfg": _cfg6(ctx).cli, _bsw_pkg: ctx.attr.bsw_pkg, "out": out.path, "srcs": ctx.attr.srcs }
     cmd = "{dvcfg} derive-ecuc run {-b} "
     if ctx.attr.settings:
         cmd += "{-c} "
@@ -668,7 +495,7 @@ derive_ecuc = rule(
         "srcs": attr.label_list(doc = "Input files (ECU extract and - for post-build selectable only - EvaluatedVariantSet).", allow_files = [".arxml"], allow_empty = False)
     },
     implementation = _derive_ecuc_impl,
-    toolchains = [":toolchain_type"]
+    toolchains = _CFG6_TOOLCHAIN
 )
 
 def _expand_file_paths_impl(ctx):
@@ -756,7 +583,7 @@ _STOP = '\n{dvcfg} stop {-p} --force'
 
 def _from_scratch_impl(ctx):
     out = ctx.actions.declare_file(ctx.label.name + "/dvproject.tar.gz")
-    cfg6 = ctx.toolchains[":toolchain_type"].cfg6
+    cfg6 = _cfg6(ctx)
     cmd = _PREPARE_FOLDER + "{dvcfg} project create {-b} --project-name '{name}' -o '{project_dir}'"
     name = ctx.attr.project_name or ctx.label.package[ctx.label.package.rfind("/") + 1:] or ctx.label.name
     dict = { "_parent_dir_": out.dirname, "project_dir": out.dirname + "/_", "dvcfg": cfg6.cli, _bsw_pkg: ctx.attr.bsw_pkg, "name": name }
@@ -800,7 +627,7 @@ Each object-typed property is merged into the settings file referenced by the .d
 Some settings might point to generated files. Use [expand_file_paths](#expand_file_paths) for these.""", allow_single_file = [".json"])
     },
     implementation = _from_scratch_impl,
-    toolchains = [":toolchain_type"]
+    toolchains = _CFG6_TOOLCHAIN
 )
 
 def _hybrid_impl(ctx):
@@ -959,7 +786,7 @@ def _internal_apply_command_impl(ctx):
             "_upstream_": ctx.attr.project,
             "_parent_dir_": out.dirname,
             "project_dir": out.dirname + "/_",
-            "dvcfg": ctx.toolchains[":toolchain_type"].cfg6.cli,
+            "dvcfg": _cfg6(ctx).cli,
             _bsw_pkg: p.bsw_pkg,
             "-p": "-p '" + out.dirname + "/_/" + p.dvjson + "'"
         },
@@ -970,7 +797,7 @@ def _internal_apply_command_impl(ctx):
     hybrid = (p.copy_hybrid + "\n") if (is_hybrid and [c for c in dvcfg_commands if _is_cmd(c, "project", "update")]) else ""
     cmd, differ_used = _join_dvcfg_cmds(p, dvcfg_commands, dict)
     if differ_used:
-        dict = dict | { "rules_cfg6_differ": ctx.toolchains[":toolchain_type"].cfg6.differ }
+        dict = dict | { "rules_cfg6_differ": _cfg6(ctx).differ }
     return [_run_shell(ctx, out, _PREPARE_FOLDER + _UNTAR + hybrid + cmd + _STOP + _TAR, dict, ctx.attr.env, ctx.label.name + "/script.sh"), p]
 
 _ENV_ATTR = { "env": attr.string_dict(doc = """Optional environment variables for this command.
@@ -991,7 +818,7 @@ build:linux --@rules_cfg6//:env=DVCFG_JVM_ARGS="-Djavax.net.ssl.trustStore=/etc/
 internal_apply_command = rule(
     attrs = _ENV_ATTR | _ENV_FLAG_ATTR | _COMMAND_ATTRS | { "project": attr.label(doc = "The project to which to apply the command.", allow_single_file = True, providers = [DvProjectProvider], mandatory = True) },
     implementation = _internal_apply_command_impl,
-    toolchains = [":toolchain_type"]
+    toolchains = _CFG6_TOOLCHAIN
 )
 
 def _apply_command_impl(name, dev_target, **kwargs):
@@ -1049,7 +876,7 @@ def _run_command_script_impl(ctx):
     dict = {
         "_parent_dir_": ctx.label.name,
         "project_dir": ctx.label.name + "/_",
-        "dvcfg": ctx.toolchains[":toolchain_type"].cfg6.cli,
+        "dvcfg": _cfg6(ctx).cli,
     }
     is_hybrid = False
     p = None
@@ -1066,7 +893,7 @@ def _run_command_script_impl(ctx):
     dict = _check_keys(dict, ctx.attr.inputs)
     cmd, differ_used = _join_dvcfg_cmds(p, [_fixup_eac_arg(c, is_hybrid, dict) for c in cmd.split("{dvcfg}")], dict)
     if differ_used:
-        differ = ctx.toolchains[":toolchain_type"].cfg6.differ
+        differ = _cfg6(ctx).differ
         dict = dict | { "rules_cfg6_differ": differ }
         runfiles = _runfiles(ctx, dict).merge(differ[DefaultInfo].default_runfiles)
     else:
@@ -1080,7 +907,7 @@ def _run_command_script_impl(ctx):
 run_command_script = rule(
     attrs = _COMMAND_ATTRS | _ENV_FLAG_ATTR | { "project": attr.label(doc = "The project on which to run the command. Only required if the command needs a project.", allow_single_file = True, providers = [DvProjectProvider]) },
     implementation = _run_command_script_impl,
-    toolchains = [":toolchain_type"]
+    toolchains = _CFG6_TOOLCHAIN
 )
 
 def _run_command_impl(name, project, command, inputs, tags, **kwargs):
@@ -1265,4 +1092,25 @@ open = macro(
         "evo1": attr.string(doc = "Optional absolute path to a DaVinci Configurator Classic Version 6 Evo1 GUI launcher.", configurable = False)
     },
     implementation = _open_impl
+)
+
+_EAC_ANNOTATION_PROCESSOR = ["@dvcfg6//:eac_annotation_processor"]
+_EAC_SCRIPT_CLASS = ["com.vector.eac.EaC"]
+
+def _eac_jar_impl(name, plugins, **kwargs):
+    script_jar(
+        name = name,
+        plugins = plugins + _EAC_ANNOTATION_PROCESSOR,
+        script_classes = _EAC_SCRIPT_CLASS,
+        **kwargs
+    )
+
+eac_jar = macro(
+    doc = "Macro for setting up an EaC .jar",
+    inherit_attrs = script_jar,
+    attrs = {
+        "script_classes": None,
+        "plugins": attr.label_list(doc = "[Inherited rule attribute](https://bazel.build/reference/be/java#java_library)", configurable = False),
+    },
+    implementation = _eac_jar_impl
 )

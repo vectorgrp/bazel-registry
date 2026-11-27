@@ -1,4 +1,4 @@
-load("@rules_dvarjson//:defs.bzl", "dvarjson_toolchain")
+load("//:dvarjson.bzl", "dvarjson_toolchain")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -10,5 +10,5 @@ dvarjson_toolchain(
 toolchain(
     name ="toolchain",
     toolchain = ":dvarjson",
-    toolchain_type = "@rules_dvarjson//:toolchain_type"
+    toolchain_type = "@dvarjson//:toolchain_type"
 )

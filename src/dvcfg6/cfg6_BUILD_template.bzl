@@ -1,13 +1,13 @@
 load("@rules_java//java:defs.bzl", "java_import", "java_plugin", "java_library", "java_binary")
-load("@rules_cfg6//:defs.bzl", "cfg6_toolchain")
-load(":defs.bzl", "script_jar")
+load("@rules_java//java:java_single_jar.bzl", "java_single_jar")
+load("@dvcfg6//:cfg6.bzl", "cfg6_toolchain")
 
 package(default_visibility = ["//visibility:public"])
 
-exports_files(["defs.bzl", "rules.bzl"])
+exports_files(["defs.bzl"])
 
 cfg6_toolchain(name = "cfg6", cli = "_/dvcfg.exe", xpro = "_/ecuxpro/ecuxpro.exe", core = "_/dvcfgcore/dvcfgcore.exe", cfg6_files = glob(["_/**"]), settings_patcher = ":settings_patcher", differ = ":differ")
-toolchain(name ="toolchain", toolchain = ":cfg6", toolchain_type = "@rules_cfg6//:toolchain_type")
+toolchain(name ="toolchain", toolchain = ":cfg6", toolchain_type = "@dvcfg6//:toolchain_type")
 
 java_import(
     name = "eac_annotation_processor_deps",
@@ -20,8 +20,7 @@ java_import(
 java_plugin(
     name = "eac_annotation_processor",
     deps = [":eac_annotation_processor_deps"],
-    processor_class = "com.vector.cfg.cac.processing.impl.CaCEntryPointProcessor",
-    visibility = ["//visibility:private"]
+    processor_class = "com.vector.cfg.cac.processing.impl.CaCEntryPointProcessor"
 )
 
 _lib_folder = "_/dvcfgpai/libs/"
@@ -61,5 +60,14 @@ java_library(name = "pai_beta", exports = _pai_common_lib_names + _pai_beta_lib_
 java_library(name = "pai_beta_neverlink", exports = [":pai_beta"], neverlink = True)
 java_library(name = "pai_beta_testonly", exports = [":pai_beta"], testonly = True)
 java_import(name = "gson", jars = glob(["_/lib/gson-*.jar"]), visibility = ["//visibility:private"])
-java_binary(name = "settings_patcher", deps = [":gson"], srcs = ["@rules_cfg6//:SettingsPatcher.java"], main_class = "SettingsPatcher")
-script_jar(name = "differ", deps = [":pai_neverlink"], srcs = ["@rules_cfg6//:Differ.java"], script_classes = ["Differ"])
+java_binary(name = "settings_patcher", deps = [":gson"], srcs = ["@dvcfg6//:SettingsPatcher.java"], main_class = "SettingsPatcher")
+java_library(name = "differ_lib", deps = [":pai_neverlink"], srcs = ["@dvcfg6//:Differ.java"])
+java_single_jar(
+    name = "differ",
+    deps = [":differ_lib"],
+    deploy_manifest_lines = [
+        "DvCfg-AutomationInterfaceJars-Compile-Version: CFG6_PAI_VERSION",
+        "Automation-Classes: Differ",
+        "DvCfg-AutomationInterface-AllowBetaApiUsage: false"
+    ],
+)
